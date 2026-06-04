@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
+const BACKEND_WITHOUT_GUARDRAIL =
+  process.env.BACKEND_WITHOUT_GUARDRAIL ?? "http://localhost:8000";
+const BACKEND_WITH_GUARDRAIL =
+  process.env.BACKEND_WITH_GUARDRAIL ?? "http://localhost:8001";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,15 +13,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const chatMode = mode === "bedrock" ? "bedrock" : "python";
     const pyMessages = messages.filter(
       (m: { content: string }) => m.content != null && m.content !== ""
     );
 
-    const pyRes = await fetch(`${PYTHON_BACKEND_URL}/api/ui`, {
+    const backendUrl =
+      mode === "guardrail" ? BACKEND_WITH_GUARDRAIL : BACKEND_WITHOUT_GUARDRAIL;
+
+    const pyRes = await fetch(`${backendUrl}/api/ui`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: pyMessages, mode: chatMode }),
+      body: JSON.stringify({ messages: pyMessages }),
     });
 
     if (!pyRes.ok) {
@@ -33,6 +38,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(await pyRes.json());
   } catch (error) {
     console.error("UI chat error:", error);
-    return NextResponse.json({ error: "Failed to get response" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to get response" },
+      { status: 500 }
+    );
   }
 }
