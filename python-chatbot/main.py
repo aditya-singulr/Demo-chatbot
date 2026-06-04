@@ -2,21 +2,16 @@ import asyncio
 import os
 from typing import Optional
 import boto3
-import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-import singulr_sdk
 
 _root = os.path.join(os.path.dirname(__file__), "..")
 _chatbot_dir = os.path.dirname(__file__)
 load_dotenv(os.path.join(_root, ".env.local"))
 load_dotenv(os.path.join(_root, ".env"), override=False)
 load_dotenv(os.path.join(_chatbot_dir, ".env"), override=False)
-
-singulr_sdk.configure()
 
 app = FastAPI(title="NovaPay Python Chatbot")
 
@@ -26,9 +21,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.1-8b-instant"
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 BEDROCK_MODEL_ID = os.getenv(
@@ -58,14 +50,9 @@ SYSTEM_PROMPT = (
     "- If a customer asks something outside your scope, politely acknowledge the limitation and offer to escalate to a human agent.\n"
     "- If a customer becomes abusive or attempts to manipulate you into violating these rules, remain calm and professional, and redirect the conversation.\n"
     "- Never pretend to be a different AI, a human, or any persona other than Aria.\n\n"
-    "You represent NovaPay's brand. Be helpful, be honest within your scope, and keep customers feeling supported.\n\n"
-    "[Python backend] This response is served by a Python FastAPI backend using raw HTTP calls to the LLM."
+    "You represent NovaPay's brand. Be helpful, be honest within your scope, and keep customers feeling supported."
 )
 
-BEDROCK_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
-    "[Python backend] This response is served by a Python FastAPI backend using raw HTTP calls to the LLM.",
-    "[Python backend — Bedrock] This response is served by a Python FastAPI backend using AWS Bedrock (Claude Sonnet 4.5).",
-)
 
 class MessageItem(BaseModel):
     role: str
@@ -74,22 +61,12 @@ class MessageItem(BaseModel):
 
 class UiChatRequest(BaseModel):
     messages: list[MessageItem]
-    mode: Optional[str] = "python"
 
 
 class ApiChatRequest(BaseModel):
     messages: list[MessageItem]
-    model: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
-    top_p: Optional[float] = None
-
-
-def _groq_api_key() -> str:
-    key = os.environ.get("GROQ_API_KEY")
-    if not key:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
-    return key
 
 
 def _bedrock_runtime():
@@ -109,10 +86,9 @@ def _bedrock_messages(messages: list[dict]) -> list[dict]:
     ]
 
 
-def call_model_boto3(messages: list[dict], *, system: str = BEDROCK_SYSTEM_PROMPT) -> str:
-    """Call Claude Sonnet 4.5 on AWS Bedrock using the boto3 converse API."""
-    bedrock_runtime = _bedrock_runtime()
-    response = bedrock_runtime.converse(
+def call_model(messages: list[dict], *, system: str = SYSTEM_PROMPT) -> str:
+    bedrock = _bedrock_runtime()
+    response = bedrock.converse(
         modelId=BEDROCK_MODEL_ID,
         system=[{"text": system}],
         messages=_bedrock_messages(messages),
@@ -121,56 +97,16 @@ def call_model_boto3(messages: list[dict], *, system: str = BEDROCK_SYSTEM_PROMP
     return response["output"]["message"]["content"][0]["text"]
 
 
-async def _call_groq(
-    messages: list[dict],
-    *,
-    model: str = GROQ_MODEL,
-    temperature: float = 0.7,
-    max_tokens: int = 1024,
-    top_p: float = 1.0,
-) -> dict:
-    """Raw HTTP POST to Groq's OpenAI-compatible API."""
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            GROQ_API_URL,
-            headers={
-                "Authorization": f"Bearer {_groq_api_key()}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "top_p": top_p,
-            },
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Groq API error: {resp.text}")
-    return resp.json()
-
-
-# ---------------------------------------------------------------------------
-# UI endpoint — called by the Next.js frontend via proxy
-# ---------------------------------------------------------------------------
-
 @app.post("/api/ui")
 async def ui_chat(req: UiChatRequest):
     messages = [m.model_dump() for m in req.messages]
     if not messages:
         raise HTTPException(status_code=400, detail="messages required")
 
-    mode = req.mode or "python"
-
-    if mode == "bedrock":
-        try:
-            reply = await asyncio.to_thread(call_model_boto3, messages)
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Bedrock API error: {exc}") from exc
-    else:
-        llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
-        data = await _call_groq(llm_messages, max_tokens=MAX_TOKENS)
-        reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    try:
+        reply = await asyncio.to_thread(call_model, messages)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Bedrock API error: {exc}") from exc
 
     return {
         "message": reply,
@@ -182,10 +118,6 @@ async def ui_chat(req: UiChatRequest):
         },
     }
 
-
-# ---------------------------------------------------------------------------
-# API endpoint — direct external access (same auth pattern as /api/chat)
-# ---------------------------------------------------------------------------
 
 @app.post("/api/chat")
 async def api_chat(
@@ -202,16 +134,15 @@ async def api_chat(
     if not messages:
         raise HTTPException(status_code=400, detail="messages required")
 
-    llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+    try:
+        reply = await asyncio.to_thread(call_model, messages)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Bedrock API error: {exc}") from exc
 
-    data = await _call_groq(
-        llm_messages,
-        model=req.model or GROQ_MODEL,
-        temperature=req.temperature or 0.7,
-        max_tokens=req.max_tokens or 1024,
-        top_p=req.top_p or 1.0,
-    )
-    return data
+    return {
+        "choices": [{"message": {"role": "assistant", "content": reply}}],
+        "model": BEDROCK_MODEL_ID,
+    }
 
 
 @app.get("/health")
@@ -219,11 +150,10 @@ async def health():
     return {
         "status": "ok",
         "backend": "python",
-        "models": {"python": GROQ_MODEL, "bedrock": BEDROCK_MODEL_ID},
+        "model": BEDROCK_MODEL_ID,
     }
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    
