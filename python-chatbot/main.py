@@ -169,7 +169,7 @@ async def ui_chat(req: UiChatRequest):
             raise HTTPException(status_code=502, detail=f"Bedrock API error: {exc}") from exc
     else:
         llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
-        data = await _call_groq(llm_messages, max_tokens=8192)
+        data = await _call_groq(llm_messages, max_tokens=MAX_TOKENS)
         reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
     return {
