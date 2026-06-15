@@ -1,7 +1,6 @@
 import asyncio
 import os
 from typing import Optional
-import boto3
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +12,8 @@ load_dotenv(os.path.join(_root, ".env.local"))
 load_dotenv(os.path.join(_root, ".env"), override=False)
 load_dotenv(os.path.join(_chatbot_dir, ".env"), override=False)
 
+import providers
+
 app = FastAPI(title="NovaPay Python Chatbot")
 
 app.add_middleware(
@@ -22,13 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-BEDROCK_MODEL_ID = os.getenv(
-    "BEDROCK_MODEL_ID",
-    "anthropic.claude-sonnet-4-20250514-v1:0",
-)
-MAX_TOKENS = 1024
-TEMPERATURE = 0.2
+BEDROCK_MODEL_ID = providers.BEDROCK_MODEL_ID
 
 SYSTEM_PROMPT = (
     "You are Aria, a friendly and professional customer support assistant for NovaPay "
@@ -61,40 +56,24 @@ class MessageItem(BaseModel):
 
 class UiChatRequest(BaseModel):
     messages: list[MessageItem]
+    provider: Optional[str] = None
 
 
 class ApiChatRequest(BaseModel):
     messages: list[MessageItem]
+    provider: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
 
 
-def _bedrock_runtime():
-    session = boto3.Session(
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=AWS_REGION,
-    )
-    return session.client("bedrock-runtime")
-
-
-def _bedrock_messages(messages: list[dict]) -> list[dict]:
-    return [
-        {"role": m["role"], "content": [{"text": m["content"]}]}
-        for m in messages
-        if m["role"] in ("user", "assistant")
-    ]
-
-
-def call_model(messages: list[dict], *, system: str = SYSTEM_PROMPT) -> str:
-    bedrock = _bedrock_runtime()
-    response = bedrock.converse(
-        modelId=BEDROCK_MODEL_ID,
-        system=[{"text": system}],
-        messages=_bedrock_messages(messages),
-        inferenceConfig={"maxTokens": MAX_TOKENS, "temperature": TEMPERATURE},
-    )
-    return response["output"]["message"]["content"][0]["text"]
+def call_model(
+    messages: list[dict],
+    *,
+    system: str = SYSTEM_PROMPT,
+    provider: Optional[str] = None,
+) -> str:
+    """Dispatch to the selected SDK technique (see providers.py)."""
+    return providers.resolve_provider(provider)(messages, system)
 
 
 @app.post("/api/ui")
@@ -104,12 +83,13 @@ async def ui_chat(req: UiChatRequest):
         raise HTTPException(status_code=400, detail="messages required")
 
     try:
-        reply = await asyncio.to_thread(call_model, messages)
+        reply = await asyncio.to_thread(call_model, messages, provider=req.provider)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Bedrock API error: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"Model API error: {exc}") from exc
 
     return {
         "message": reply,
+        "provider": req.provider or providers.DEFAULT_PROVIDER,
         "security": {
             "category": "safe",
             "confidence": "low",
@@ -135,14 +115,20 @@ async def api_chat(
         raise HTTPException(status_code=400, detail="messages required")
 
     try:
-        reply = await asyncio.to_thread(call_model, messages)
+        reply = await asyncio.to_thread(call_model, messages, provider=req.provider)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Bedrock API error: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"Model API error: {exc}") from exc
 
     return {
         "choices": [{"message": {"role": "assistant", "content": reply}}],
         "model": BEDROCK_MODEL_ID,
+        "provider": req.provider or providers.DEFAULT_PROVIDER,
     }
+
+
+@app.get("/api/providers")
+async def get_providers():
+    return {"providers": providers.list_providers(), "default": providers.DEFAULT_PROVIDER}
 
 
 @app.get("/health")

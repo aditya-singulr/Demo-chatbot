@@ -7,7 +7,7 @@ const BACKEND_WITH_GUARDRAIL =
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, mode } = await req.json();
+    const { messages, mode, provider } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const pyRes = await fetch(`${backendUrl}/api/ui`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: pyMessages }),
+      body: JSON.stringify({ messages: pyMessages, provider }),
     });
 
     if (!pyRes.ok) {
