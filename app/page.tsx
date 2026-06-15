@@ -17,6 +17,24 @@ type Message = {
 
 type Mode = "no_guardrail" | "guardrail";
 
+type Provider = { id: string; label: string };
+
+const FALLBACK_PROVIDERS: Provider[] = [
+  { id: "bedrock_converse", label: "Bedrock · Converse (boto3)" },
+  { id: "bedrock_invoke_model", label: "Bedrock · InvokeModel (boto3)" },
+  { id: "anthropic_sdk", label: "Anthropic SDK" },
+  { id: "openai_sdk", label: "OpenAI SDK" },
+  { id: "langchain_bedrock", label: "LangChain · Bedrock" },
+  { id: "langchain_anthropic", label: "LangChain · Anthropic" },
+  { id: "langchain_openai", label: "LangChain · OpenAI" },
+  { id: "bedrock_converse_stream", label: "Bedrock · Converse Stream (boto3)" },
+  { id: "bedrock_invoke_model_stream", label: "Bedrock · InvokeModel Stream (boto3)" },
+  { id: "bedrock_invoke_agent", label: "Bedrock Agent · InvokeAgent" },
+  { id: "bedrock_invoke_inline_agent", label: "Bedrock Agent · InvokeInlineAgent" },
+  { id: "bedrock_invoke_flow", label: "Bedrock Agent · InvokeFlow" },
+  { id: "bedrock_retrieve_and_generate", label: "Bedrock Agent · Retrieve & Generate (KB RAG)" },
+];
+
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   prompt_injection:   { label: "Prompt Injection",   color: "bg-red-100 text-red-700 border-red-200" },
   jailbreak:          { label: "Jailbreak Attempt",  color: "bg-orange-100 text-orange-700 border-orange-200" },
@@ -32,6 +50,8 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [totalAttacks, setTotalAttacks] = useState(0);
+  const [providers, setProviders] = useState<Provider[]>(FALLBACK_PROVIDERS);
+  const [provider, setProvider] = useState<string>(FALLBACK_PROVIDERS[0].id);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messages = chats[mode];
@@ -39,6 +59,22 @@ export default function Home() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chats, loading, mode]);
+
+  useEffect(() => {
+    fetch("/api/providers")
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data.providers) && data.providers.length) {
+          setProviders(data.providers);
+          setProvider(prev =>
+            data.providers.some((p: Provider) => p.id === prev)
+              ? prev
+              : data.default ?? data.providers[0].id
+          );
+        }
+      })
+      .catch(() => {/* keep fallback list */});
+  }, []);
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
@@ -64,6 +100,7 @@ export default function Home() {
             .filter(m => m.content != null && m.content !== "")
             .map(({ role, content }) => ({ role, content })),
           mode: mode === "guardrail" ? "guardrail" : "no_guardrail",
+          provider,
         }),
       });
       const data = await res.json();
@@ -106,12 +143,28 @@ export default function Home() {
               </p>
             </div>
           </div>
-          {totalAttacks > 0 && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-full px-3 py-1">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-              <span className="text-xs font-medium text-red-700">{totalAttacks} attack{totalAttacks !== 1 ? "s" : ""} detected</span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {totalAttacks > 0 && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-full px-3 py-1">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                <span className="text-xs font-medium text-red-700">{totalAttacks} attack{totalAttacks !== 1 ? "s" : ""} detected</span>
+              </div>
+            )}
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              <span className="hidden sm:inline font-medium">SDK</span>
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value)}
+                disabled={loading}
+                title="Underlying SDK technique used to call the model"
+                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50"
+              >
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="mt-3 flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
