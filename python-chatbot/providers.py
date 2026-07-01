@@ -25,6 +25,8 @@ BEDROCK_MODEL_ID = os.getenv(
 # Native (non-Bedrock) model ids for the direct SDK techniques.
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # The OpenAI / Anthropic client libraries refuse to build a request unless an
 # api_key is present locally — even when routed through the Singulr proxy, which
@@ -184,6 +186,35 @@ def call_openai_sdk(messages: list[dict], system: str) -> str:
         messages=[{"role": "system", "content": system}, *_chat_messages(messages)],
     )
     return response.choices[0].message.content
+
+
+# --------------------------------------------------------------------------- #
+# Technique: Groq — httpx chat completions
+# --------------------------------------------------------------------------- #
+def call_groq(messages: list[dict], system: str) -> str:
+    import httpx
+
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("Set GROQ_API_KEY in .env to use this provider")
+
+    response = httpx.post(
+        GROQ_CHAT_COMPLETIONS_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": system},
+                *_chat_messages(messages),
+            ],
+        },
+        timeout=60.0,
+    )
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"]
 
 
 # --------------------------------------------------------------------------- #
@@ -393,6 +424,10 @@ def call_bedrock_retrieve_and_generate(messages: list[dict], system: str) -> str
 # --------------------------------------------------------------------------- #
 # Ordered: id -> {label, call}. `label` is what the UI dropdown shows.
 PROVIDERS: dict[str, dict] = {
+    "groq": {
+        "label": "Groq",
+        "call": call_groq,
+    },
     "bedrock_converse": {
         "label": "Bedrock · Converse (boto3)",
         "call": call_bedrock_converse,
