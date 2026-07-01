@@ -2,7 +2,7 @@ fastapi>=0.115.0
 uvicorn>=0.34.0
 python-dotenv>=1.1.0
 boto3>=1.35.0
-singulr-sdk-agent>=1.0.2
+singulr-sdk-agent>=1.0.5
 # SDK techniques selectable from the UI (see providers.py)
 anthropic>=0.40.0
 openai>=1.50.0
