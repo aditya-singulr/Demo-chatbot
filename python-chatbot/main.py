@@ -1,5 +1,6 @@
-import asyncio
 import os
+import httpx
+import asyncio
 from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header
@@ -24,6 +25,8 @@ app.add_middleware(
 )
 
 BEDROCK_MODEL_ID = providers.BEDROCK_MODEL_ID
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 SYSTEM_PROMPT = (
     "You are Aria, a friendly and professional customer support assistant for NovaPay "
@@ -61,9 +64,38 @@ class UiChatRequest(BaseModel):
 
 class ApiChatRequest(BaseModel):
     messages: list[MessageItem]
-    provider: Optional[str] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+
+
+def call_groq(prompt: str, *, api_key: Optional[str] = None) -> str:
+    """Call the Groq chat completions API and return the assistant reply."""
+    key = api_key or os.environ.get("GROQ_API_KEY")
+    if not key:
+        raise ValueError("GROQ_API_KEY environment variable is not set")
+
+    try:
+        response = httpx.post(
+            GROQ_API_URL,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": GROQ_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=60.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(
+            f"Groq API error ({exc.response.status_code}): {exc.response.text}"
+        ) from exc
+
+    body = response.json()
+    try:
+        return body["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"Unexpected Groq API response: {body}") from exc
 
 
 def call_model(
@@ -101,28 +133,22 @@ async def ui_chat(req: UiChatRequest):
 
 @app.post("/api/chat")
 async def api_chat(
-    req: ApiChatRequest,
+    body: ApiChatRequest,
     api_key: Optional[str] = Header(None),
-    authorization: Optional[str] = Header(None),
 ):
     expected = os.environ.get("CHATBOT_API_KEY")
-    token = api_key or (authorization.removeprefix("Bearer ").strip() if authorization else None)
-    if expected and token != expected:
+    if expected and api_key != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    messages = [m.model_dump() for m in req.messages]
-    if not messages:
-        raise HTTPException(status_code=400, detail="messages required")
-
+    prompt = body.messages[0].content
     try:
-        reply = await asyncio.to_thread(call_model, messages, provider=req.provider)
+        reply = await asyncio.to_thread(call_groq, prompt)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Model API error: {exc}") from exc
 
     return {
         "choices": [{"message": {"role": "assistant", "content": reply}}],
-        "model": BEDROCK_MODEL_ID,
-        "provider": req.provider or providers.DEFAULT_PROVIDER,
+        "model": GROQ_MODEL,
+        "provider": "groq",
     }
 
 
