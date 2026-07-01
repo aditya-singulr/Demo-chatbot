@@ -425,7 +425,7 @@ def call_bedrock_retrieve_and_generate(messages: list[dict], system: str) -> str
 # Ordered: id -> {label, call}. `label` is what the UI dropdown shows.
 PROVIDERS: dict[str, dict] = {
     "groq": {
-        "label": "Groq",
+        "label": "Groq · HTTPX Chat Completions",
         "call": call_groq,
     },
     "bedrock_converse": {
