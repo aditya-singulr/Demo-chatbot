@@ -16,6 +16,9 @@ load_dotenv(os.path.join(_chatbot_dir, ".env"), override=False)
 import singulr_sdk
 singulr_sdk.configure()
 
+import logging
+logging.getLogger("singulr_sdk").setLevel(logging.DEBUG)
+
 # Imported AFTER configure() so every technique's client is routed through the
 # Singulr proxy (configure() patches botocore and sets the SDK base URLs).
 import providers

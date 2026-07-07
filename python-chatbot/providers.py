@@ -23,7 +23,7 @@ BEDROCK_MODEL_ID = os.getenv(
     "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 )
 # Native (non-Bedrock) model ids for the direct SDK techniques.
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 
 # The OpenAI / Anthropic client libraries refuse to build a request unless an
