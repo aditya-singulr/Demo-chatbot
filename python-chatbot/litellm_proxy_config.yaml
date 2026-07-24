@@ -1,0 +1,105 @@
+model_list:
+
+  # ============================================================
+  # OpenAI
+  # ============================================================
+
+  - model_name: "gpt-4o"
+    litellm_params:
+      model: "openai/gpt-4o"
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: "gpt-4o-mini"
+    litellm_params:
+      model: "openai/gpt-4o-mini"
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: "gpt-4.1"
+    litellm_params:
+      model: "openai/gpt-4.1"
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: "gpt-4.1-mini"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: os.environ/OPENAI_API_KEY
+
+
+  # ============================================================
+  # Anthropic - Direct API (Claude 5 family)
+  # ============================================================
+
+  - model_name: "claude-opus-4-8"
+    litellm_params:
+      model: "anthropic/claude-opus-4-8"
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: "claude-sonnet-5"
+    litellm_params:
+      model: "anthropic/claude-sonnet-5"
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: "claude-haiku-4-5-20251001"
+    litellm_params:
+      model: "anthropic/claude-haiku-4-5-20251001"
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+
+  # ============================================================
+  # AWS Bedrock - Amazon Nova
+  # ============================================================
+
+  - model_name: "amazon.nova-pro-v1:0"
+    litellm_params:
+      model: "bedrock/amazon.nova-pro-v1:0"
+      aws_region_name: os.environ/AWS_REGION
+
+  - model_name: "amazon.nova-lite-v1:0"
+    litellm_params:
+      model: "bedrock/amazon.nova-lite-v1:0"
+      aws_region_name: os.environ/AWS_REGION
+
+  - model_name: "amazon.nova-micro-v1:0"
+    litellm_params:
+      model: "bedrock/amazon.nova-micro-v1:0"
+      aws_region_name: os.environ/AWS_REGION
+
+
+  # ============================================================
+  # AWS Bedrock - Mistral AI
+  # ============================================================
+
+  - model_name: "mistral.mistral-large-2402-v1:0"
+    litellm_params:
+      model: "bedrock/mistral.mistral-large-2402-v1:0"
+      aws_region_name: os.environ/AWS_REGION
+
+  - model_name: "mistral.mixtral-8x7b-instruct-v0:1"
+    litellm_params:
+      model: "bedrock/mistral.mixtral-8x7b-instruct-v0:1"
+      aws_region_name: os.environ/AWS_REGION
+
+  - model_name: "mistral.mistral-7b-instruct-v0:2"
+    litellm_params:
+      model: "bedrock/mistral.mistral-7b-instruct-v0:2"
+      aws_region_name: os.environ/AWS_REGION
+
+
+  # ============================================================
+  # Custom Singulr Provider
+  # ============================================================
+
+  - model_name: "singulr-gemma"
+    litellm_params:
+      model: "singulr/gemma3:12b"
+      api_key: os.environ/SINGULR_GEMMA_API_KEY
+
+
+# ============================================================
+# LiteLLM Settings
+# ============================================================
+
+litellm_settings:
+  custom_provider_map:
+    - provider: "singulr"
+      custom_handler: litellm.proxy.custom_llms.singulr_gemma_handler.singulr_llm

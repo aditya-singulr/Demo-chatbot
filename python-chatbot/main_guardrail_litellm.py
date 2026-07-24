@@ -13,16 +13,9 @@ load_dotenv(os.path.join(_root, ".env"), override=False)
 load_dotenv(os.path.join(_chatbot_dir, ".env"), override=False)
 
 
-# import singulr_sdk
-# singulr_sdk.configure()
+import litellm_utils as providers
 
-# Imported AFTER configure() so every technique's client is routed through the
-# Singulr proxy (configure() patches botocore and sets the SDK base URLs).
-import providers
-
-app = FastAPI(title="NovaPay Python Chatbot")
-
-
+app = FastAPI(title="NovaPay Python Chatbot (LiteLLM SDK)")
 
 
 app.add_middleware(
@@ -31,8 +24,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-BEDROCK_MODEL_ID = providers.BEDROCK_MODEL_ID
 
 SYSTEM_PROMPT = (
     "You are Aria, a friendly and professional customer support assistant for NovaPay "
@@ -81,10 +72,10 @@ def call_model(
     system: str = SYSTEM_PROMPT,
     provider: Optional[str] = None,
 ) -> str:
-    """Dispatch to the selected SDK technique (see providers.py).
+    """Dispatch to the LiteLLM SDK, routed through the LiteLLM proxy.
 
-    singulr_sdk.configure() has already run at import time, so whichever
-    technique is chosen, its client routes through the Singulr guardrail.
+    `provider` here is a model name registered on the proxy (see
+    litellm_utils.py); the proxy applies Singulr guardrails server-side.
     """
     return providers.resolve_provider(provider)(messages, system)
 
@@ -134,7 +125,7 @@ async def api_chat(
 
     return {
         "choices": [{"message": {"role": "assistant", "content": reply}}],
-        "model": BEDROCK_MODEL_ID,
+        "model": req.provider or providers.DEFAULT_PROVIDER,
         "provider": req.provider or providers.DEFAULT_PROVIDER,
     }
 
@@ -149,10 +140,10 @@ async def health():
     return {
         "status": "ok",
         "backend": "python",
-        "model": BEDROCK_MODEL_ID,
+        "model": providers.DEFAULT_PROVIDER,
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8002)
