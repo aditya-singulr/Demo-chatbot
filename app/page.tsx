@@ -2,6 +2,77 @@
 
 import { useState, useRef, useEffect } from "react";
 
+type Provider = { id: string; label: string };
+
+function ProviderSelect({
+  value,
+  options,
+  onChange,
+  disabled,
+  title,
+}: {
+  value: string;
+  options: Provider[];
+  onChange: (id: string) => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = options.find((p) => p.id === value);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  return (
+    <div className="relative" ref={rootRef} title={title}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50"
+      >
+        <span className="max-w-[10rem] truncate">{selected?.label ?? value}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-gray-400 shrink-0">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {open && (
+        <ul className="absolute right-0 z-10 mt-1 max-h-64 w-56 overflow-auto rounded-md border border-gray-200 bg-white py-1 text-xs shadow-lg">
+          {options.map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(p.id);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-gray-50 ${
+                  p.id === value ? "text-emerald-700 font-medium" : "text-gray-700"
+                }`}
+              >
+                <span className="truncate">{p.label}</span>
+                {p.id === value && (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 shrink-0">
+                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 type Security = {
   category: string;
   confidence: string;
@@ -16,8 +87,6 @@ type Message = {
 };
 
 type Mode = "no_guardrail" | "guardrail";
-
-type Provider = { id: string; label: string };
 
 const FALLBACK_PROVIDERS: Provider[] = [
   { id: "bedrock_converse", label: "Bedrock · Converse (boto3)" },
@@ -35,6 +104,10 @@ const FALLBACK_PROVIDERS: Provider[] = [
   { id: "bedrock_retrieve_and_generate", label: "Bedrock Agent · Retrieve & Generate (KB RAG)" },
 ];
 
+const FALLBACK_LITELLM_PROVIDERS: Provider[] = [
+  { id: "gpt-4o", label: "gpt-4o" },
+];
+
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   prompt_injection:   { label: "Prompt Injection",   color: "bg-red-100 text-red-700 border-red-200" },
   jailbreak:          { label: "Jailbreak Attempt",  color: "bg-orange-100 text-orange-700 border-orange-200" },
@@ -46,15 +119,19 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
 
 export default function Home() {
   const [mode, setMode] = useState<Mode>("no_guardrail");
+  const [useLitellm, setUseLitellm] = useState(false);
   const [chats, setChats] = useState<Record<Mode, Message[]>>({ no_guardrail: [], guardrail: [] });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [totalAttacks, setTotalAttacks] = useState(0);
   const [providers, setProviders] = useState<Provider[]>(FALLBACK_PROVIDERS);
   const [provider, setProvider] = useState<string>(FALLBACK_PROVIDERS[0].id);
+  const [litellmProviders, setLitellmProviders] = useState<Provider[]>(FALLBACK_LITELLM_PROVIDERS);
+  const [litellmProvider, setLitellmProvider] = useState<string>(FALLBACK_LITELLM_PROVIDERS[0].id);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messages = chats[mode];
+  const isLitellm = mode === "guardrail" && useLitellm;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -69,7 +146,21 @@ export default function Home() {
           setProvider(prev =>
             data.providers.some((p: Provider) => p.id === prev)
               ? prev
-              : data.default ?? data.providers[0].id
+              : data.providers[0].id
+          );
+        }
+      })
+      .catch(() => {/* keep fallback list */});
+
+    fetch("/api/litellm-providers")
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data.providers) && data.providers.length) {
+          setLitellmProviders(data.providers);
+          setLitellmProvider(prev =>
+            data.providers.some((p: Provider) => p.id === prev)
+              ? prev
+              : data.providers[0].id
           );
         }
       })
@@ -78,6 +169,7 @@ export default function Home() {
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
+    if (newMode === "no_guardrail") setUseLitellm(false);
     setInput("");
   }
 
@@ -99,13 +191,15 @@ export default function Home() {
           messages: newMessages
             .filter(m => m.content != null && m.content !== "")
             .map(({ role, content }) => ({ role, content })),
-          mode: mode === "guardrail" ? "guardrail" : "no_guardrail",
-          provider,
+          mode: isLitellm ? "guardrail_litellm" : mode,
+          provider: isLitellm ? litellmProvider : provider,
         }),
       });
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      if (!res.ok) {
+        throw new Error(data.upstream_body ?? data.error ?? "Request failed");
+      }
 
       if (data.security?.total_attacks !== undefined) {
         setTotalAttacks(data.security.total_attacks);
@@ -115,10 +209,11 @@ export default function Home() {
         ...prev,
         [mode]: [...newMessages, { role: "assistant", content: data.message ?? "", security: data.security }],
       }));
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Sorry, something went wrong.";
       setChats(prev => ({
         ...prev,
-        [mode]: [...newMessages, { role: "assistant", content: "Sorry, something went wrong.", security: null }],
+        [mode]: [...newMessages, { role: "assistant", content: message, security: null }],
       }));
     } finally {
       setLoading(false);
@@ -139,7 +234,7 @@ export default function Home() {
               <p className="text-sm font-semibold text-gray-900">NovaPay Support — Aria</p>
               <p className={`text-xs font-medium flex items-center gap-1 ${isGuardrail ? "text-emerald-600" : "text-red-600"}`}>
                 <span className={`inline-block w-1.5 h-1.5 rounded-full ${isGuardrail ? "bg-emerald-600" : "bg-red-600"}`}></span>
-                {isGuardrail ? "With Guardrail · Singulr SDK" : "Without Guardrail · Unprotected"}
+                {isLitellm ? "With Guardrails · LiteLLM" : isGuardrail ? "With Guardrail · Singulr SDK" : "Without Guardrail · Unprotected"}
               </p>
             </div>
           </div>
@@ -150,40 +245,64 @@ export default function Home() {
                 <span className="text-xs font-medium text-red-700">{totalAttacks} attack{totalAttacks !== 1 ? "s" : ""} detected</span>
               </div>
             )}
-            <label className="flex items-center gap-1.5 text-xs text-gray-500">
-              <span className="hidden sm:inline font-medium">SDK</span>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
+            {mode === "guardrail" && (
+              <div className="flex items-center gap-4 whitespace-nowrap">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={!useLitellm}
+                    onChange={(e) => setUseLitellm(!e.target.checked)}
+                    disabled={loading}
+                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  SDK
+                </label>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={useLitellm}
+                    onChange={(e) => setUseLitellm(e.target.checked)}
+                    disabled={loading}
+                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  LiteLLM
+                </label>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <span className="hidden sm:inline font-medium">{isLitellm ? "Model" : "SDK"}</span>
+              <ProviderSelect
+                value={isLitellm ? litellmProvider : provider}
+                options={isLitellm ? litellmProviders : providers}
+                onChange={(id) => (isLitellm ? setLitellmProvider(id) : setProvider(id))}
                 disabled={loading}
-                title="Underlying SDK technique used to call the model"
-                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50"
-              >
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
-            </label>
+                title={isLitellm ? "Model routed through the LiteLLM proxy" : "Underlying SDK technique used to call the model"}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="mt-3 flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
-          <button
-            onClick={() => switchMode("no_guardrail")}
-            className={`flex-1 py-1.5 transition-colors ${!isGuardrail ? "bg-red-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
-          >
-            Without Guardrail
-          </button>
-          <button
-            onClick={() => switchMode("guardrail")}
-            className={`flex-1 py-1.5 transition-colors ${isGuardrail ? "bg-emerald-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
-          >
-            With Guardrail
-          </button>
+        <div className="mt-3 flex items-center gap-2">
+          <div className="flex flex-1 rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+            <button
+              onClick={() => switchMode("no_guardrail")}
+              className={`flex-1 py-1.5 transition-colors ${mode === "no_guardrail" ? "bg-red-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
+            >
+              Without Guardrail
+            </button>
+            <button
+              onClick={() => switchMode("guardrail")}
+              className={`flex-1 py-1.5 transition-colors ${mode === "guardrail" ? "bg-emerald-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
+            >
+              With Guardrail
+            </button>
+          </div>
         </div>
 
         <p className="mt-2 text-xs text-gray-400">
-          {isGuardrail
+          {isLitellm
+            ? "Protected by Singulr LiteLLM guardrail  — attacks are detected and blocked"
+            : isGuardrail
             ? "Protected by Singulr SDK guardrail — attacks are detected and blocked"
             : "No guardrail configured — vulnerable to prompt injection and manipulation"}
         </p>
