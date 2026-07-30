@@ -1,12 +1,9 @@
 import type { NextConfig } from "next";
-import path from "path";
 
 const nextConfig: NextConfig = {
-  // Parent dirs may have other lockfiles (e.g. /home/ubuntu/pnpm-lock.yaml).
-  turbopack: {
-    root: path.join(__dirname),
-  },
   // Next.js rejects a bare "*"; these patterns cover IPv4 and multi-segment hosts.
+  // Do not set turbopack.root to this app dir — it breaks CSS @import resolution
+  // (resolves from the parent, e.g. /home/ubuntu) when a parent lockfile exists.
   allowedDevOrigins: ["*.*", "*.*.*", "*.*.*.*", "*.*.*.*.*", "*.*.*.*.*.*"],
   async headers() {
     return [
