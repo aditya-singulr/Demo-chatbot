@@ -180,6 +180,14 @@ Same pattern with `.env.instance2`, different `UI_PORT`, `BACKEND_PORT_GUARDRAIL
 
 Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security group allows the UI and backend ports you use.
 
+> **Important:** Always use `--prod` on EC2. Running without it starts `next dev`, which blocks remote browsers by default and is not intended for production.
+
+If you must use dev mode remotely (not recommended on EC2), set in your env file:
+```bash
+ALLOWED_DEV_ORIGINS=54.92.220.141,your-other-client-ip
+```
+Then restart the UI. Prefer `--prod` instead.
+
 ---
 
 ## Endpoints
