@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-
-// Both backends expose the same provider registry; ask the no-guardrail one.
-const BACKEND =
-  process.env.BACKEND_WITHOUT_GUARDRAIL ?? "http://localhost:8000";
+import { getProvidersBackendUrl } from "@/lib/backends";
 
 // Fallback list so the dropdown still renders if the backend is unreachable.
 const FALLBACK = [
@@ -22,8 +19,10 @@ const FALLBACK = [
 ];
 
 export async function GET() {
+  const backend = getProvidersBackendUrl();
+
   try {
-    const res = await fetch(`${BACKEND}/api/providers`, {
+    const res = await fetch(`${backend}/api/providers`, {
       cache: "no-store",
     });
     if (!res.ok) throw new Error(`backend ${res.status}`);

@@ -1,17 +1,14 @@
 import asyncio
 import os
 from typing import Optional
-from dotenv import load_dotenv
+
+import env_config
+
+env_config.setup(__name__)
+
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-_root = os.path.join(os.path.dirname(__file__), "..")
-_chatbot_dir = os.path.dirname(__file__)
-load_dotenv(os.path.join(_root, ".env.local"))
-load_dotenv(os.path.join(_root, ".env"), override=False)
-load_dotenv(os.path.join(_chatbot_dir, ".env"), override=False)
-
 
 import litellm_utils as providers
 
@@ -146,4 +143,9 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+
+    uvicorn.run(
+        app,
+        host=env_config.get_bind_host(),
+        port=env_config.get_backend_port("BACKEND_PORT_GUARDRAIL_LITELLM", default=8002),
+    )

@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:ui": "node scripts/start-ui.mjs --env-file python-chatbot/.env",
     "build": "next build",
     "start": "next start",
+    "start:ui": "node scripts/start-ui.mjs --env-file python-chatbot/.env --prod",
     "lint": "eslint"
   },
   "dependencies": {

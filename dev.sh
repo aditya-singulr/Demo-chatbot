@@ -34,18 +34,20 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 run_backend() {
-  local name="$1" script="$2"
+  local name="$1"
+  local script="$2"
+  shift 2
   echo "Starting $name..."
-  ("$VENV_DIR/bin/python" "$PY_DIR/$script") &
+  ("$VENV_DIR/bin/python" "$PY_DIR/$script" "$@") &
   PIDS+=($!)
 }
 
-run_backend "backend (no guardrail, :8000)" "main.py"
-run_backend "backend (guardrail, :8001)" "main_guardrail.py"
-run_backend "backend (guardrail litellm, :8002)" "main_guardrail_litellm.py"
+run_backend "backend (no guardrail, :8000)" main.py --env-file .env
+run_backend "backend (guardrail, :8001)" main_guardrail.py --env-file .env
+run_backend "backend (guardrail litellm, :8002)" main_guardrail_litellm.py --env-file .env
 
 echo "Starting frontend (:3000)..."
-(cd "$ROOT_DIR" && npm run dev) &
+(node "$ROOT_DIR/scripts/start-ui.mjs" --env-file .env) &
 PIDS+=($!)
 
 wait

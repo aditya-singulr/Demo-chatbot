@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const BACKEND_WITHOUT_GUARDRAIL =
-  process.env.BACKEND_WITHOUT_GUARDRAIL ?? "http://localhost:8000";
-const BACKEND_WITH_GUARDRAIL =
-  process.env.BACKEND_WITH_GUARDRAIL ?? "http://localhost:8001";
-const BACKEND_WITH_GUARDRAIL_LITELLM =
-  process.env.BACKEND_WITH_GUARDRAIL_LITELLM ?? "http://localhost:8002";
+import { getBackendUrls } from "@/lib/backends";
 
 export async function POST(req: NextRequest) {
   const TIMEOUT_MS = Number(process.env.UI_BACKEND_TIMEOUT_MS) || 15000;
+  const { withoutGuardrail, withGuardrail, withGuardrailLitellm } = getBackendUrls();
+
   try {
     const { messages, mode, provider } = await req.json();
 
@@ -22,10 +18,10 @@ export async function POST(req: NextRequest) {
 
     const backendUrl =
       mode === "guardrail_litellm"
-        ? BACKEND_WITH_GUARDRAIL_LITELLM
+        ? withGuardrailLitellm
         : mode === "guardrail"
-        ? BACKEND_WITH_GUARDRAIL
-        : BACKEND_WITHOUT_GUARDRAIL;
+        ? withGuardrail
+        : withoutGuardrail;
 
     // forward selective incoming headers (Authorization, cookies, and any x- headers)
     const incomingHeaders = Object.fromEntries(req.headers as any) as Record<string, string>;

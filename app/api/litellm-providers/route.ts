@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-
-const BACKEND_WITH_GUARDRAIL_LITELLM =
-  process.env.BACKEND_WITH_GUARDRAIL_LITELLM ?? "http://localhost:8002";
+import { getBackendUrls } from "@/lib/backends";
 
 const FALLBACK = [{ id: "gpt-4o", label: "gpt-4o" }];
 
 export async function GET() {
+  const { withGuardrailLitellm } = getBackendUrls();
+
   try {
-    const res = await fetch(`${BACKEND_WITH_GUARDRAIL_LITELLM}/api/providers`, {
+    const res = await fetch(`${withGuardrailLitellm}/api/providers`, {
       cache: "no-store",
     });
     if (!res.ok) throw new Error(`backend ${res.status}`);
