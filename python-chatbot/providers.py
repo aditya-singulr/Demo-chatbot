@@ -7,14 +7,22 @@ but is adapted to take a live chat history (`messages`) and a `system` prompt
 and return the assistant's reply as plain text.
 
 Guardrails are NOT applied here. The hosting app decides: if it has called
-`singulr_sdk.configure()` (see main_guardrail.py) every client below is
+    `singulr_sdk.configure()` (see main_guardrail.py) every client below is
 transparently routed through the Singulr proxy; if it has not (main.py) the
 same calls go straight to the provider. The technique code is identical either
 way — that is the whole point of the SDK.
+
+Multimodal notes (Bedrock) — native formats only, no text-extraction fallbacks:
+  - converse / converse_stream: images (png/jpeg/gif/webp) + documents
+    (pdf/csv/doc/docx/xls/xlsx/html/txt/md). Documents require a text block.
+  - invoke_model / invoke_model_stream (Anthropic Claude): images
+    (png/jpeg/gif/webp) + PDF document blocks only.
 """
+import base64
 import json
 import os
 import re
+import uuid
 
 AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 
@@ -48,13 +56,70 @@ TEMPERATURE = 0.2
 # --------------------------------------------------------------------------- #
 # Shared helpers
 # --------------------------------------------------------------------------- #
+IMAGE_MEDIA_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpeg",
+    "image/jpg": "jpeg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
+# Native Converse DocumentBlock formats only (no text-extraction workarounds).
+CONVERSE_DOCUMENT_FORMATS = {
+    "pdf": "pdf",
+    "application/pdf": "pdf",
+    "csv": "csv",
+    "text/csv": "csv",
+    "doc": "doc",
+    "application/msword": "doc",
+    "docx": "docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "xls": "xls",
+    "application/vnd.ms-excel": "xls",
+    "xlsx": "xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "html": "html",
+    "text/html": "html",
+    "txt": "txt",
+    "text/plain": "txt",
+    "md": "md",
+    "text/markdown": "md",
+    "text/x-markdown": "md",
+}
+# Native Anthropic InvokeModel document blocks on Bedrock: PDF only (+ images).
+INVOKE_DOCUMENT_FORMATS = {
+    "pdf": "pdf",
+    "application/pdf": "pdf",
+}
+
+# UI <input accept="..."> strings — native formats only per API family.
+CONVERSE_FILE_ACCEPT = (
+    ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md,.csv,.html,.doc,.docx,.xls,.xlsx,"
+    "image/png,image/jpeg,image/gif,image/webp,application/pdf,"
+    "text/plain,text/markdown,text/csv,text/html,"
+    "application/msword,"
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+    "application/vnd.ms-excel,"
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+INVOKE_FILE_ACCEPT = (
+    ".png,.jpg,.jpeg,.gif,.webp,.pdf,"
+    "image/png,image/jpeg,image/gif,image/webp,application/pdf"
+)
+DEFAULT_FILE_PROMPT = "Please analyze the attached file(s)."
+
+
 def _chat_messages(messages: list[dict]) -> list[dict]:
-    """Keep only user/assistant turns as {role, content} plain dicts."""
-    return [
-        {"role": m["role"], "content": m["content"]}
-        for m in messages
-        if m["role"] in ("user", "assistant")
-    ]
+    """Keep only user/assistant turns; preserve optional attachments."""
+    out = []
+    for m in messages:
+        if m["role"] not in ("user", "assistant"):
+            continue
+        entry = {"role": m["role"], "content": m.get("content") or ""}
+        attachments = m.get("attachments") or []
+        if attachments:
+            entry["attachments"] = attachments
+        out.append(entry)
+    return out
 
 
 def _boto_session():
@@ -81,6 +146,154 @@ def _latest_user_text(messages: list[dict]) -> str:
         if m["role"] == "user":
             return m["content"]
     return ""
+
+
+def _attachment_bytes(att: dict) -> bytes:
+    data = att.get("data") or ""
+    if isinstance(data, bytes):
+        return data
+    return base64.b64decode(data)
+
+
+def _attachment_media_type(att: dict) -> str:
+    return (att.get("media_type") or "").lower().strip()
+
+
+def _attachment_ext(att: dict) -> str:
+    name = att.get("name") or ""
+    if "." in name:
+        return name.rsplit(".", 1)[-1].lower()
+    return ""
+
+
+def _document_name(att: dict) -> str:
+    """Unique Converse document name — Bedrock rejects duplicate names in a request."""
+    raw = (att.get("name") or "document").rsplit(".", 1)[0]
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", raw).strip("_") or "document"
+    suffix = uuid.uuid4().hex
+    # Leave room for "_" + 32-char uuid; Bedrock caps names at 200 chars.
+    return f"{cleaned[:167]}_{suffix}"
+
+
+def _is_image_attachment(att: dict) -> bool:
+    mt = _attachment_media_type(att)
+    if mt in IMAGE_MEDIA_TYPES:
+        return True
+    return _attachment_ext(att) in {"png", "jpg", "jpeg", "gif", "webp"}
+
+
+def _image_format(att: dict) -> str:
+    mt = _attachment_media_type(att)
+    if mt in IMAGE_MEDIA_TYPES:
+        return IMAGE_MEDIA_TYPES[mt]
+    ext = _attachment_ext(att)
+    return "jpeg" if ext == "jpg" else (ext or "png")
+
+
+def _document_format(att: dict, allowed: dict[str, str]) -> str | None:
+    mt = _attachment_media_type(att)
+    if mt in allowed:
+        return allowed[mt]
+    ext = _attachment_ext(att)
+    return allowed.get(ext)
+
+
+def _message_text_for_files(text: str, attachments: list) -> str:
+    """Converse requires a text block when a document is present; always pair files with text."""
+    text = (text or "").strip()
+    if text:
+        return text
+    if attachments:
+        return DEFAULT_FILE_PROMPT
+    return ""
+
+
+def _unsupported_file_error(api: str, att: dict, hint: str) -> RuntimeError:
+    label = att.get("name") or att.get("media_type") or "unknown"
+    return RuntimeError(f"Unsupported file type for {api}: {label}. {hint}")
+
+
+def _converse_content_blocks(m: dict) -> list[dict]:
+    """Build Bedrock Converse content blocks (native text + image/document only)."""
+    attachments = m.get("attachments") or []
+    text = _message_text_for_files(m.get("content") or "", attachments)
+    blocks: list[dict] = []
+    if text:
+        blocks.append({"text": text})
+    for att in attachments:
+        if _is_image_attachment(att):
+            blocks.append(
+                {
+                    "image": {
+                        "format": _image_format(att),
+                        "source": {"bytes": _attachment_bytes(att)},
+                    }
+                }
+            )
+            continue
+        fmt = _document_format(att, CONVERSE_DOCUMENT_FORMATS)
+        if not fmt:
+            raise _unsupported_file_error(
+                "Bedrock Converse",
+                att,
+                "Supported: png, jpeg, gif, webp, pdf, csv, doc, docx, xls, xlsx, html, txt, md.",
+            )
+        blocks.append(
+            {
+                "document": {
+                    "format": fmt,
+                    "name": _document_name(att),
+                    "source": {"bytes": _attachment_bytes(att)},
+                }
+            }
+        )
+    return blocks or [{"text": ""}]
+
+
+def _anthropic_content_blocks(m: dict) -> list[dict]:
+    """Build Anthropic InvokeModel content blocks (native image + PDF document only)."""
+    attachments = m.get("attachments") or []
+    text = _message_text_for_files(m.get("content") or "", attachments)
+    blocks: list[dict] = []
+    for att in attachments:
+        raw_b64 = att.get("data") or ""
+        if isinstance(raw_b64, bytes):
+            raw_b64 = base64.b64encode(raw_b64).decode("ascii")
+        if _is_image_attachment(att):
+            fmt = _image_format(att)
+            media_type = f"image/{fmt}" if fmt != "jpg" else "image/jpeg"
+            blocks.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": raw_b64,
+                    },
+                }
+            )
+            continue
+        fmt = _document_format(att, INVOKE_DOCUMENT_FORMATS)
+        if fmt != "pdf":
+            raise _unsupported_file_error(
+                "Bedrock InvokeModel",
+                att,
+                "Supported: png, jpeg, gif, webp, pdf only.",
+            )
+        blocks.append(
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": raw_b64,
+                },
+                "title": _document_name(att),
+            }
+        )
+    if text:
+        blocks.append({"type": "text", "text": text})
+    return blocks or [{"type": "text", "text": ""}]
 
 
 # Stable session id for the demo (agent APIs require one per conversation).
@@ -123,7 +336,7 @@ def call_bedrock_converse(messages: list[dict], system: str) -> str:
         modelId=BEDROCK_MODEL_ID,
         system=[{"text": system}],
         messages=[
-            {"role": m["role"], "content": [{"text": m["content"]}]}
+            {"role": m["role"], "content": _converse_content_blocks(m)}
             for m in _chat_messages(messages)
         ],
         inferenceConfig={"maxTokens": MAX_TOKENS, "temperature": TEMPERATURE},
@@ -142,7 +355,7 @@ def call_bedrock_invoke_model(messages: list[dict], system: str) -> str:
         "temperature": TEMPERATURE,
         "system": system,
         "messages": [
-            {"role": m["role"], "content": [{"type": "text", "text": m["content"]}]}
+            {"role": m["role"], "content": _anthropic_content_blocks(m)}
             for m in _chat_messages(messages)
         ],
     }
@@ -282,7 +495,7 @@ def call_bedrock_converse_stream(messages: list[dict], system: str) -> str:
         modelId=BEDROCK_MODEL_ID,
         system=[{"text": system}],
         messages=[
-            {"role": m["role"], "content": [{"text": m["content"]}]}
+            {"role": m["role"], "content": _converse_content_blocks(m)}
             for m in _chat_messages(messages)
         ],
         inferenceConfig={"maxTokens": MAX_TOKENS, "temperature": TEMPERATURE},
@@ -303,7 +516,7 @@ def call_bedrock_invoke_model_stream(messages: list[dict], system: str) -> str:
         "temperature": TEMPERATURE,
         "system": system,
         "messages": [
-            {"role": m["role"], "content": [{"type": "text", "text": m["content"]}]}
+            {"role": m["role"], "content": _anthropic_content_blocks(m)}
             for m in _chat_messages(messages)
         ],
     }
@@ -431,10 +644,14 @@ PROVIDERS: dict[str, dict] = {
     "bedrock_converse": {
         "label": "Bedrock · Converse (boto3)",
         "call": call_bedrock_converse,
+        "supports_files": True,
+        "file_accept": CONVERSE_FILE_ACCEPT,
     },
     "bedrock_invoke_model": {
         "label": "Bedrock · InvokeModel (boto3)",
         "call": call_bedrock_invoke_model,
+        "supports_files": True,
+        "file_accept": INVOKE_FILE_ACCEPT,
     },
     "anthropic_sdk": {
         "label": "Anthropic SDK",
@@ -459,10 +676,14 @@ PROVIDERS: dict[str, dict] = {
     "bedrock_converse_stream": {
         "label": "Bedrock · Converse Stream (boto3)",
         "call": call_bedrock_converse_stream,
+        "supports_files": True,
+        "file_accept": CONVERSE_FILE_ACCEPT,
     },
     "bedrock_invoke_model_stream": {
         "label": "Bedrock · InvokeModel Stream (boto3)",
         "call": call_bedrock_invoke_model_stream,
+        "supports_files": True,
+        "file_accept": INVOKE_FILE_ACCEPT,
     },
     "bedrock_invoke_agent": {
         "label": "Bedrock Agent · InvokeAgent",
@@ -521,4 +742,12 @@ def resolve_provider(provider: str | None):
 
 def list_providers() -> list[dict]:
     """Lightweight metadata for the UI dropdown."""
-    return [{"id": pid, "label": meta["label"]} for pid, meta in PROVIDERS.items()]
+    return [
+        {
+            "id": pid,
+            "label": meta["label"],
+            "supports_files": bool(meta.get("supports_files")),
+            **({"file_accept": meta["file_accept"]} if meta.get("file_accept") else {}),
+        }
+        for pid, meta in PROVIDERS.items()
+    ]
