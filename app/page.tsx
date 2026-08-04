@@ -165,6 +165,7 @@ export default function Home() {
   const [chats, setChats] = useState<Record<Mode, Message[]>>({ no_guardrail: [], guardrail: [] });
   const [input, setInput] = useState("");
   const [pendingFile, setPendingFile] = useState<Attachment | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [totalAttacks, setTotalAttacks] = useState(0);
   const [providers, setProviders] = useState<Provider[]>(FALLBACK_PROVIDERS);
@@ -188,8 +189,17 @@ export default function Home() {
   }, [chats, loading, mode]);
 
   useEffect(() => {
-    if (!supportsFiles) setPendingFile(null);
+    if (!supportsFiles) {
+      setPendingFile(null);
+      setFileError(null);
+    }
   }, [supportsFiles, provider]);
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
 
   useEffect(() => {
     fetch("/api/providers")
@@ -226,6 +236,7 @@ export default function Home() {
     if (newMode === "no_guardrail") setUseLitellm(false);
     setInput("");
     setPendingFile(null);
+    setFileError(null);
   }
 
   function changeProvider(id: string) {
@@ -236,30 +247,37 @@ export default function Home() {
     setChats((prev) => ({ ...prev, [mode]: [] }));
     setInput("");
     setPendingFile(null);
+    setFileError(null);
   }
 
   async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    setFileError(null);
     if (file.size > MAX_FILE_BYTES) {
-      alert(`File too large (max ${MAX_FILE_BYTES / (1024 * 1024)} MB).`);
+      setPendingFile(null);
+      setFileError(
+        `"${file.name}" is ${formatFileSize(file.size)}. Maximum upload size is ${MAX_FILE_BYTES / (1024 * 1024)} MB.`
+      );
       return;
     }
     const allowed = allowedExtsForProvider(activeProviderMeta);
     const ext = fileExt(file.name);
     if (allowed && !allowed.has(ext)) {
-      alert(
+      setPendingFile(null);
+      setFileError(
         activeProviderMeta?.id.includes("invoke_model")
-          ? "This provider only supports: png, jpeg, gif, webp, pdf."
-          : "This provider only supports: png, jpeg, gif, webp, pdf, csv, doc, docx, xls, xlsx, html, txt, md."
+          ? `"${file.name}" is not supported. This provider only accepts: png, jpeg, gif, webp, pdf.`
+          : `"${file.name}" is not supported. This provider only accepts: png, jpeg, gif, webp, pdf, csv, doc, docx, xls, xlsx, html, txt, md.`
       );
       return;
     }
     try {
       setPendingFile(await readFileAsAttachment(file));
     } catch {
-      alert("Could not read that file.");
+      setPendingFile(null);
+      setFileError(`Could not read "${file.name}". Please try another file.`);
     }
   }
 
@@ -278,6 +296,7 @@ export default function Home() {
     setChats(prev => ({ ...prev, [mode]: newMessages }));
     setInput("");
     setPendingFile(null);
+    setFileError(null);
     setLoading(true);
 
     try {
@@ -498,6 +517,22 @@ export default function Home() {
       </main>
 
       <form onSubmit={sendMessage} className="bg-white border-t border-gray-200 px-4 py-3">
+        {fileError && (
+          <div className="mb-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            <span className="mt-0.5 shrink-0">⚠</span>
+            <p className="flex-1 leading-relaxed">{fileError}</p>
+            <button
+              type="button"
+              onClick={() => setFileError(null)}
+              className="shrink-0 rounded p-0.5 text-red-400 hover:bg-red-100 hover:text-red-700"
+              aria-label="Dismiss error"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          </div>
+        )}
         {pendingFile && (
           <div className="mb-2 flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-700">
