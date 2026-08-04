@@ -53,9 +53,16 @@ SYSTEM_PROMPT = (
 )
 
 
+class AttachmentItem(BaseModel):
+    name: str
+    media_type: str
+    data: str  # base64-encoded file bytes
+
+
 class MessageItem(BaseModel):
     role: str
-    content: str
+    content: str = ""
+    attachments: Optional[list[AttachmentItem]] = None
 
 
 class UiChatRequest(BaseModel):
@@ -84,9 +91,19 @@ def call_model(
     return providers.resolve_provider(provider)(messages, system)
 
 
+def _messages_payload(items: list[MessageItem]) -> list[dict]:
+    out = []
+    for m in items:
+        entry = m.model_dump(exclude_none=True)
+        if not (entry.get("content") or "").strip() and not entry.get("attachments"):
+            continue
+        out.append(entry)
+    return out
+
+
 @app.post("/api/ui")
 async def ui_chat(req: UiChatRequest):
-    messages = [m.model_dump() for m in req.messages]
+    messages = _messages_payload(req.messages)
     if not messages:
         raise HTTPException(status_code=400, detail="messages required")
 
@@ -118,7 +135,7 @@ async def api_chat(
     if expected and token != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    messages = [m.model_dump() for m in req.messages]
+    messages = _messages_payload(req.messages)
     if not messages:
         raise HTTPException(status_code=400, detail="messages required")
 

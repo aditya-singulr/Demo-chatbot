@@ -2,7 +2,13 @@
 
 import { useState, useRef, useEffect } from "react";
 
-type Provider = { id: string; label: string };
+type Provider = { id: string; label: string; supports_files?: boolean; file_accept?: string };
+
+type Attachment = {
+  name: string;
+  media_type: string;
+  data: string; // base64
+};
 
 function ProviderSelect({
   value,
@@ -83,21 +89,22 @@ type Security = {
 type Message = {
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[];
   security?: Security | null;
 };
 
 type Mode = "no_guardrail" | "guardrail";
 
 const FALLBACK_PROVIDERS: Provider[] = [
-  { id: "bedrock_converse", label: "Bedrock · Converse (boto3)" },
-  { id: "bedrock_invoke_model", label: "Bedrock · InvokeModel (boto3)" },
+  { id: "bedrock_converse", label: "Bedrock · Converse (boto3)", supports_files: true, file_accept: ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md,.csv,.html,.doc,.docx,.xls,.xlsx,image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,text/html" },
+  { id: "bedrock_invoke_model", label: "Bedrock · InvokeModel (boto3)", supports_files: true, file_accept: ".png,.jpg,.jpeg,.gif,.webp,.pdf,image/png,image/jpeg,image/gif,image/webp,application/pdf" },
   { id: "anthropic_sdk", label: "Anthropic SDK" },
   { id: "openai_sdk", label: "OpenAI SDK" },
   { id: "langchain_bedrock", label: "LangChain · Bedrock" },
   { id: "langchain_anthropic", label: "LangChain · Anthropic" },
   { id: "langchain_openai", label: "LangChain · OpenAI" },
-  { id: "bedrock_converse_stream", label: "Bedrock · Converse Stream (boto3)" },
-  { id: "bedrock_invoke_model_stream", label: "Bedrock · InvokeModel Stream (boto3)" },
+  { id: "bedrock_converse_stream", label: "Bedrock · Converse Stream (boto3)", supports_files: true, file_accept: ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md,.csv,.html,.doc,.docx,.xls,.xlsx,image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,text/html" },
+  { id: "bedrock_invoke_model_stream", label: "Bedrock · InvokeModel Stream (boto3)", supports_files: true, file_accept: ".png,.jpg,.jpeg,.gif,.webp,.pdf,image/png,image/jpeg,image/gif,image/webp,application/pdf" },
   { id: "bedrock_invoke_agent", label: "Bedrock Agent · InvokeAgent" },
   { id: "bedrock_invoke_inline_agent", label: "Bedrock Agent · InvokeInlineAgent" },
   { id: "bedrock_invoke_flow", label: "Bedrock Agent · InvokeFlow" },
@@ -108,6 +115,23 @@ const FALLBACK_LITELLM_PROVIDERS: Provider[] = [
   { id: "gpt-4o", label: "gpt-4o" },
 ];
 
+const MAX_FILE_BYTES = 4.5 * 1024 * 1024;
+
+const CONVERSE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "pdf", "txt", "md", "csv", "html", "doc", "docx", "xls", "xlsx"]);
+const INVOKE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "pdf"]);
+
+function allowedExtsForProvider(p?: Provider): Set<string> | null {
+  if (!p?.supports_files) return null;
+  if (p.id.includes("invoke_model")) return INVOKE_EXTS;
+  if (p.id.includes("converse")) return CONVERSE_EXTS;
+  return null;
+}
+
+function fileExt(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
+}
+
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   prompt_injection:   { label: "Prompt Injection",   color: "bg-red-100 text-red-700 border-red-200" },
   jailbreak:          { label: "Jailbreak Attempt",  color: "bg-orange-100 text-orange-700 border-orange-200" },
@@ -117,11 +141,31 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   roleplay_attack:    { label: "Roleplay Attack",    color: "bg-pink-100 text-pink-700 border-pink-200" },
 };
 
+function readFileAsAttachment(file: File): Promise<Attachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const comma = result.indexOf(",");
+      const data = comma >= 0 ? result.slice(comma + 1) : result;
+      resolve({
+        name: file.name,
+        media_type: file.type || "application/octet-stream",
+        data,
+      });
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Home() {
   const [mode, setMode] = useState<Mode>("no_guardrail");
   const [useLitellm, setUseLitellm] = useState(false);
   const [chats, setChats] = useState<Record<Mode, Message[]>>({ no_guardrail: [], guardrail: [] });
   const [input, setInput] = useState("");
+  const [pendingFile, setPendingFile] = useState<Attachment | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [totalAttacks, setTotalAttacks] = useState(0);
   const [providers, setProviders] = useState<Provider[]>(FALLBACK_PROVIDERS);
@@ -129,13 +173,33 @@ export default function Home() {
   const [litellmProviders, setLitellmProviders] = useState<Provider[]>(FALLBACK_LITELLM_PROVIDERS);
   const [litellmProvider, setLitellmProvider] = useState<string>(FALLBACK_LITELLM_PROVIDERS[0].id);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messages = chats[mode];
   const isLitellm = mode === "guardrail" && useLitellm;
+  const activeProviderMeta = isLitellm
+    ? litellmProviders.find((p) => p.id === litellmProvider)
+    : providers.find((p) => p.id === provider);
+  const supportsFiles = !isLitellm && !!activeProviderMeta?.supports_files;
+  const fileAccept = activeProviderMeta?.file_accept ?? "";
+  const canSend = (!!input.trim() || !!pendingFile) && !loading;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chats, loading, mode]);
+
+  useEffect(() => {
+    if (!supportsFiles) {
+      setPendingFile(null);
+      setFileError(null);
+    }
+  }, [supportsFiles, provider]);
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
 
   useEffect(() => {
     fetch("/api/providers")
@@ -171,16 +235,68 @@ export default function Home() {
     setMode(newMode);
     if (newMode === "no_guardrail") setUseLitellm(false);
     setInput("");
+    setPendingFile(null);
+    setFileError(null);
+  }
+
+  function changeProvider(id: string) {
+    const current = isLitellm ? litellmProvider : provider;
+    if (id === current) return;
+    if (isLitellm) setLitellmProvider(id);
+    else setProvider(id);
+    setChats((prev) => ({ ...prev, [mode]: [] }));
+    setInput("");
+    setPendingFile(null);
+    setFileError(null);
+  }
+
+  async function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setFileError(null);
+    if (file.size > MAX_FILE_BYTES) {
+      setPendingFile(null);
+      setFileError(
+        `"${file.name}" is ${formatFileSize(file.size)}. Maximum upload size is ${MAX_FILE_BYTES / (1024 * 1024)} MB.`
+      );
+      return;
+    }
+    const allowed = allowedExtsForProvider(activeProviderMeta);
+    const ext = fileExt(file.name);
+    if (allowed && !allowed.has(ext)) {
+      setPendingFile(null);
+      setFileError(
+        activeProviderMeta?.id.includes("invoke_model")
+          ? `"${file.name}" is not supported. This provider only accepts: png, jpeg, gif, webp, pdf.`
+          : `"${file.name}" is not supported. This provider only accepts: png, jpeg, gif, webp, pdf, csv, doc, docx, xls, xlsx, html, txt, md.`
+      );
+      return;
+    }
+    try {
+      setPendingFile(await readFileAsAttachment(file));
+    } catch {
+      setPendingFile(null);
+      setFileError(`Could not read "${file.name}". Please try another file.`);
+    }
   }
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || loading) return;
+    if ((!text && !pendingFile) || loading) return;
 
-    const newMessages: Message[] = [...messages, { role: "user", content: text }];
+    const attachments = pendingFile ? [pendingFile] : undefined;
+    const userMessage: Message = {
+      role: "user",
+      content: text,
+      ...(attachments ? { attachments } : {}),
+    };
+    const newMessages: Message[] = [...messages, userMessage];
     setChats(prev => ({ ...prev, [mode]: newMessages }));
     setInput("");
+    setPendingFile(null);
+    setFileError(null);
     setLoading(true);
 
     try {
@@ -189,8 +305,16 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages
-            .filter(m => m.content != null && m.content !== "")
-            .map(({ role, content }) => ({ role, content })),
+            .filter(
+              m =>
+                (m.content != null && m.content !== "") ||
+                (m.attachments && m.attachments.length > 0)
+            )
+            .map(({ role, content, attachments: atts }) => ({
+              role,
+              content,
+              ...(atts?.length ? { attachments: atts } : {}),
+            })),
           mode: isLitellm ? "guardrail_litellm" : mode,
           provider: isLitellm ? litellmProvider : provider,
         }),
@@ -274,7 +398,7 @@ export default function Home() {
               <ProviderSelect
                 value={isLitellm ? litellmProvider : provider}
                 options={isLitellm ? litellmProviders : providers}
-                onChange={(id) => (isLitellm ? setLitellmProvider(id) : setProvider(id))}
+                onChange={changeProvider}
                 disabled={loading}
                 title={isLitellm ? "Model routed through the LiteLLM proxy" : "Underlying SDK technique used to call the model"}
               />
@@ -346,6 +470,26 @@ export default function Home() {
                   ? (isGuardrail ? "bg-emerald-600 text-white rounded-br-sm" : "bg-red-600 text-white rounded-br-sm")
                   : "bg-white text-gray-800 border border-gray-200 rounded-bl-sm shadow-sm")
               }>
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {msg.attachments.map((att) => (
+                      <span
+                        key={att.name}
+                        className={
+                          "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs " +
+                          (msg.role === "user"
+                            ? "bg-white/20 text-white"
+                            : "bg-gray-100 text-gray-700")
+                        }
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 shrink-0">
+                          <path fillRule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.621a1.5 1.5 0 00-.44-1.06l-4.12-4.122A1.5 1.5 0 0011.378 2H4.5zm4.75 6.75a.75.75 0 00-1.5 0v2.69l-.72-.72a.75.75 0 00-1.06 1.06l2 2a.75.75 0 001.06 0l2-2a.75.75 0 10-1.06-1.06l-.72.72V8.75z" clipRule="evenodd" />
+                        </svg>
+                        <span className="truncate max-w-[10rem]">{att.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {msg.content}
               </div>
             </div>
@@ -372,24 +516,95 @@ export default function Home() {
         <div ref={bottomRef} />
       </main>
 
-      <form onSubmit={sendMessage} className="bg-white border-t border-gray-200 px-4 py-3 flex items-center gap-3">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={isGuardrail ? "Message Aria (with guardrail)..." : "Message Aria (no guardrail)..."}
-          className={`flex-1 rounded-full border px-4 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent ${isGuardrail ? "border-emerald-200 focus:ring-emerald-500" : "border-red-200 focus:ring-red-500"}`}
-          disabled={loading}
-        />
-        <button
-          type="submit"
-          disabled={!input.trim() || loading}
-          className={`w-9 h-9 rounded-full flex items-center justify-center text-white disabled:opacity-40 transition-colors ${isGuardrail ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"}`}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-            <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-          </svg>
-        </button>
+      <form onSubmit={sendMessage} className="bg-white border-t border-gray-200 px-4 py-3">
+        {fileError && (
+          <div className="mb-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            <span className="mt-0.5 shrink-0">⚠</span>
+            <p className="flex-1 leading-relaxed">{fileError}</p>
+            <button
+              type="button"
+              onClick={() => setFileError(null)}
+              className="shrink-0 rounded p-0.5 text-red-400 hover:bg-red-100 hover:text-red-700"
+              aria-label="Dismiss error"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          </div>
+        )}
+        {pendingFile && (
+          <div className="mb-2 flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-700">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-gray-500">
+                <path fillRule="evenodd" d="M15.621 4.379a3 3 0 00-4.242 0l-7 7a3 3 0 004.241 4.243h.001l.497-.5a.75.75 0 011.064 1.057l-.498.501-.002.002a4.5 4.5 0 01-6.364-6.364l7-7a4.5 4.5 0 016.368 6.36l-3.455 3.553A2.625 2.625 0 119.52 9.52l3.45-3.451a.75.75 0 111.061 1.06l-3.45 3.451a1.125 1.125 0 001.591 1.59l3.55-3.549a3 3 0 000-4.242z" clipRule="evenodd" />
+              </svg>
+              <span className="truncate max-w-[14rem]">{pendingFile.name}</span>
+              <button
+                type="button"
+                onClick={() => setPendingFile(null)}
+                className="ml-0.5 rounded-full p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+                aria-label="Remove attachment"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            </span>
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          {supportsFiles && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={fileAccept}
+                className="hidden"
+                onChange={onFileSelected}
+                disabled={loading}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+                title={
+                  activeProviderMeta?.id.includes("invoke_model")
+                    ? "Attach image or PDF (native InvokeModel formats only)"
+                    : "Attach image or document (native Converse formats only)"
+                }
+                className={`w-9 h-9 rounded-full flex items-center justify-center border text-lg font-medium disabled:opacity-40 transition-colors ${
+                  isGuardrail
+                    ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    : "border-red-200 text-red-700 hover:bg-red-50"
+                }`}
+              >
+                +
+              </button>
+            </>
+          )}
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={
+              supportsFiles
+                ? "Message Aria… (text and/or file)"
+                : (isGuardrail ? "Message Aria (with guardrail)..." : "Message Aria (no guardrail)...")
+            }
+            className={`flex-1 rounded-full border px-4 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent ${isGuardrail ? "border-emerald-200 focus:ring-emerald-500" : "border-red-200 focus:ring-red-500"}`}
+            disabled={loading}
+          />
+          <button
+            type="submit"
+            disabled={!canSend}
+            className={`w-9 h-9 rounded-full flex items-center justify-center text-white disabled:opacity-40 transition-colors ${isGuardrail ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"}`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+              <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+            </svg>
+          </button>
+        </div>
       </form>
     </div>
   );

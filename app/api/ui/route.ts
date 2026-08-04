@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrls } from "@/lib/backends";
 
 export async function POST(req: NextRequest) {
-  const TIMEOUT_MS = Number(process.env.UI_BACKEND_TIMEOUT_MS) || 15000;
   const { withoutGuardrail, withGuardrail, withGuardrailLitellm } = getBackendUrls();
 
   try {
@@ -13,8 +12,17 @@ export async function POST(req: NextRequest) {
     }
 
     const pyMessages = messages.filter(
-      (m: { content: string }) => m.content != null && m.content !== ""
+      (m: { content?: string; attachments?: unknown[] }) =>
+        (m.content != null && m.content !== "") ||
+        (Array.isArray(m.attachments) && m.attachments.length > 0)
     );
+    const hasAttachments = pyMessages.some(
+      (m: { attachments?: unknown[] }) =>
+        Array.isArray(m.attachments) && m.attachments.length > 0
+    );
+    // Multimodal Bedrock calls need more headroom than text-only turns.
+    const TIMEOUT_MS =
+      Number(process.env.UI_BACKEND_TIMEOUT_MS) || (hasAttachments ? 60000 : 15000);
 
     const backendUrl =
       mode === "guardrail_litellm"
