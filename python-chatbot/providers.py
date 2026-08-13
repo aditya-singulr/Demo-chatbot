@@ -204,7 +204,8 @@ def _message_text_for_files(text: str, attachments: list) -> str:
     if text:
         return text
     if attachments:
-        return DEFAULT_FILE_PROMPT
+        # return DEFAULT_FILE_PROMPT
+        return ""
     return ""
 
 
