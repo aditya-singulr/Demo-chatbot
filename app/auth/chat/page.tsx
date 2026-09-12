@@ -172,7 +172,7 @@ export default function AuthenticatedChat() {
         setCheckingAuth(false);
       });
 
-    fetch("/api/providers")
+    fetch("/api/auth/providers")
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.providers) && data.providers.length) {
