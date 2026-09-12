@@ -27,6 +27,9 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
+    console.log("Login attempt started");
+    console.log("OKTA_DOMAIN:", OKTA_DOMAIN);
+
     if (!OKTA_DOMAIN) {
       setError("Okta domain not configured.");
       setLoading(false);
@@ -36,9 +39,12 @@ export default function LoginPage() {
     try {
       // This will redirect to Okta, then back to /auth/chat
       const redirectUrl = window.location.origin + "/auth/chat";
+      console.log("Calling login with redirectUrl:", redirectUrl);
       await login(username, password, redirectUrl);
+      console.log("Login returned (should have redirected)");
       // If we get here, redirect didn't happen (shouldn't occur)
     } catch (err) {
+      console.error("Login error:", err);
       setError(err instanceof Error ? err.message : "Login failed");
       setLoading(false);
     }

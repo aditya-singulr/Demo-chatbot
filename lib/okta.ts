@@ -34,13 +34,18 @@ export async function primaryAuth(
   username: string,
   password: string
 ): Promise<OktaAuthResponse> {
-  const response = await fetch(`https://${OKTA_DOMAIN}/api/v1/authn`, {
+  const url = `https://${OKTA_DOMAIN}/api/v1/authn`;
+  console.log("primaryAuth: calling", url);
+
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
 
+  console.log("primaryAuth: response status", response.status);
   const data = await response.json();
+  console.log("primaryAuth: response data", data);
 
   if (!response.ok) {
     throw new Error(data.errorSummary || "Authentication failed");
@@ -55,6 +60,8 @@ export async function primaryAuth(
  */
 export function redirectToOktaSession(sessionToken: string, redirectUrl: string): void {
   const url = `https://${OKTA_DOMAIN}/login/sessionCookieRedirect?token=${encodeURIComponent(sessionToken)}&redirectUrl=${encodeURIComponent(redirectUrl)}`;
+  console.log("redirectToOktaSession: sessionToken received, length:", sessionToken?.length);
+  console.log("redirectToOktaSession: redirecting to:", url);
   window.location.href = url;
 }
 
