@@ -5,7 +5,7 @@
  * Session ID is stored in a cookie for backend verification.
  */
 
-export const OKTA_DOMAIN = process.env.NEXT_PUBLIC_OKTA_DOMAIN || "";
+export const OKTA_DOMAIN = process.env.NEXT_PUBLIC_OKTA_DOMAIN || "singulr.okta.com";
 export const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "okta_session";
 
 export type OktaAuthResponse = {

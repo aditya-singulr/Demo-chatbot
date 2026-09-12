@@ -8,12 +8,8 @@ import type { NextRequest } from "next/server";
  * to the auth flow (/auth or /auth/chat based on session).
  */
 export function middleware(request: NextRequest) {
-  // Check if Okta is configured (use NEXT_PUBLIC_ so it's available in middleware)
-  const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN;
-
-  if (!oktaDomain) {
-    return NextResponse.next();
-  }
+  // Check if Okta is configured
+  const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN || "singulr.okta.com";
 
   const { pathname } = request.nextUrl;
   const cookieName = process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "okta_session";

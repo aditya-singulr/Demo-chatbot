@@ -12,7 +12,7 @@ import httpx
 from fastapi import HTTPException, Request
 from pydantic import BaseModel
 
-OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "")
+OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "singulr.okta.com")
 OKTA_API_TOKEN = os.getenv("OKTA_API_TOKEN", "")
 SESSION_COOKIE_NAME = os.getenv("OKTA_SESSION_COOKIE_NAME", "okta_session")
 
