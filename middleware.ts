@@ -4,20 +4,20 @@ import type { NextRequest } from "next/server";
 /**
  * Middleware to handle auth redirects.
  *
- * When AUTH_REDIRECT_ENABLED=true, redirects unauthenticated users
- * from root (/) to the login page (/auth).
+ * When NEXT_PUBLIC_OKTA_DOMAIN is set, redirects users from root (/)
+ * to the auth flow (/auth or /auth/chat based on session).
  */
 export function middleware(request: NextRequest) {
-  const authRedirectEnabled = process.env.AUTH_REDIRECT_ENABLED === "true";
+  // Check if Okta is configured (use NEXT_PUBLIC_ so it's available in middleware)
+  const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN;
 
-  if (!authRedirectEnabled) {
+  if (!oktaDomain) {
     return NextResponse.next();
   }
 
   const { pathname } = request.nextUrl;
-  const sessionCookie = request.cookies.get(
-    process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "okta_session"
-  );
+  const cookieName = process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "okta_session";
+  const sessionCookie = request.cookies.get(cookieName);
 
   // If accessing root without session, redirect to /auth
   if (pathname === "/" && !sessionCookie) {
