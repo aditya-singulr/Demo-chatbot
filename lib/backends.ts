@@ -15,6 +15,9 @@ export function getBackendUrls() {
     withGuardrailLitellm:
       process.env.BACKEND_WITH_GUARDRAIL_LITELLM ??
       backendUrlFromPort("BACKEND_PORT_GUARDRAIL_LITELLM", "8002"),
+    withAuth:
+      process.env.BACKEND_WITH_AUTH ??
+      backendUrlFromPort("BACKEND_PORT_AUTH", "8003"),
   };
 }
 
