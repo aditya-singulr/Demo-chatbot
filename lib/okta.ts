@@ -1,12 +1,12 @@
 /**
  * Okta authentication utilities for frontend.
  *
- * Uses Okta's Primary Authentication API for direct login flow.
- * Session ID is stored in a cookie for backend verification.
+ * Uses Okta's Primary Authentication API + redirect flow.
+ * After /authn, redirects to Okta to set the session cookie.
  */
 
 export const OKTA_DOMAIN = process.env.NEXT_PUBLIC_OKTA_DOMAIN || "singulr.okta.com";
-export const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "okta_session";
+export const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "sid";
 
 export type OktaAuthResponse = {
   status: "SUCCESS" | "MFA_REQUIRED" | "LOCKED_OUT" | "PASSWORD_EXPIRED" | string;
@@ -24,22 +24,6 @@ export type OktaAuthResponse = {
   };
   errorCode?: string;
   errorSummary?: string;
-};
-
-export type OktaSession = {
-  id: string;
-  login: string;
-  userId: string;
-  status: "ACTIVE" | "MFA_REQUIRED" | "MFA_ENROLL" | string;
-  expiresAt: string;
-  cookieToken?: string;
-};
-
-export type OktaUser = {
-  id: string;
-  login: string;
-  firstName?: string;
-  lastName?: string;
 };
 
 /**
@@ -66,58 +50,22 @@ export async function primaryAuth(
 }
 
 /**
- * Exchange session token for a full session.
- * Returns session ID that can be used for cookie-based auth.
+ * Redirect to Okta to set session cookie.
+ * After this, Okta redirects back to redirectUrl with the sid cookie set.
  */
-export async function createSession(sessionToken: string): Promise<OktaSession> {
-  const response = await fetch(
-    `https://${OKTA_DOMAIN}/api/v1/sessions?additionalFields=cookieToken`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken }),
-    }
-  );
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.errorSummary || "Failed to create session");
-  }
-
-  return data;
+export function redirectToOktaSession(sessionToken: string, redirectUrl: string): void {
+  const url = `https://${OKTA_DOMAIN}/login/sessionCookieRedirect?token=${encodeURIComponent(sessionToken)}&redirectUrl=${encodeURIComponent(redirectUrl)}`;
+  window.location.href = url;
 }
 
 /**
- * Store session ID in a cookie.
- */
-export function setSessionCookie(sessionId: string, expiresAt: string): void {
-  const expires = new Date(expiresAt).toUTCString();
-  document.cookie = `${SESSION_COOKIE_NAME}=${sessionId}; path=/; expires=${expires}; SameSite=Lax`;
-}
-
-/**
- * Get session ID from cookie.
- */
-export function getSessionCookie(): string | null {
-  const match = document.cookie.match(new RegExp(`(^| )${SESSION_COOKIE_NAME}=([^;]+)`));
-  return match ? match[2] : null;
-}
-
-/**
- * Clear session cookie.
- */
-export function clearSessionCookie(): void {
-  document.cookie = `${SESSION_COOKIE_NAME}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-}
-
-/**
- * Full login flow: authenticate and create session.
+ * Full login flow: authenticate and redirect to Okta for cookie.
  */
 export async function login(
   username: string,
-  password: string
-): Promise<{ session: OktaSession; user: OktaUser }> {
+  password: string,
+  redirectUrl: string
+): Promise<void> {
   const authResponse = await primaryAuth(username, password);
 
   if (authResponse.status !== "SUCCESS") {
@@ -128,30 +76,31 @@ export async function login(
     throw new Error("No session token received");
   }
 
-  const session = await createSession(authResponse.sessionToken);
-  setSessionCookie(session.id, session.expiresAt);
-
-  const user: OktaUser = {
-    id: session.userId,
-    login: session.login,
-    firstName: authResponse._embedded?.user?.profile?.firstName,
-    lastName: authResponse._embedded?.user?.profile?.lastName,
-  };
-
-  return { session, user };
+  // Redirect to Okta to set the session cookie
+  redirectToOktaSession(authResponse.sessionToken, redirectUrl);
 }
 
 /**
- * Logout: clear session cookie.
- * Optionally revoke session with Okta (requires backend call).
+ * Check if user has Okta session by calling backend.
+ * The sid cookie is HttpOnly so we can't check it directly.
+ */
+export async function checkAuthStatus(): Promise<{ authenticated: boolean; login?: string }> {
+  try {
+    const res = await fetch("/api/auth/check", { credentials: "include" });
+    if (res.ok) {
+      return await res.json();
+    }
+    return { authenticated: false };
+  } catch {
+    return { authenticated: false };
+  }
+}
+
+/**
+ * Logout: redirect to Okta logout or just clear local state.
  */
 export function logout(): void {
-  clearSessionCookie();
-}
-
-/**
- * Check if user has a session cookie.
- */
-export function hasSession(): boolean {
-  return !!getSessionCookie();
+  // Redirect to Okta logout to clear the sid cookie
+  const returnUrl = window.location.origin + "/auth";
+  window.location.href = `https://${OKTA_DOMAIN}/login/signout?fromURI=${encodeURIComponent(returnUrl)}`;
 }

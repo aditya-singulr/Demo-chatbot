@@ -1,7 +1,7 @@
 """
 Okta session verification for FastAPI.
 
-Validates session cookies by calling Okta's Sessions API.
+Validates Okta's sid cookie by calling Okta's Sessions API.
 """
 
 import os
@@ -14,10 +14,7 @@ from pydantic import BaseModel
 
 OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "singulr.okta.com")
 OKTA_API_TOKEN = os.getenv("OKTA_API_TOKEN", "")
-SESSION_COOKIE_NAME = os.getenv("OKTA_SESSION_COOKIE_NAME", "okta_session")
-
-# Cache session validation for 60 seconds to reduce Okta API calls
-SESSION_CACHE_TTL = int(os.getenv("OKTA_SESSION_CACHE_TTL", "60"))
+SESSION_COOKIE_NAME = os.getenv("OKTA_SESSION_COOKIE_NAME", "sid")
 
 
 class OktaSession(BaseModel):
@@ -35,7 +32,7 @@ class AuthenticatedUser(BaseModel):
 
 
 def _get_session_cookie(request: Request) -> Optional[str]:
-    """Extract session ID from cookie."""
+    """Extract Okta sid cookie."""
     return request.cookies.get(SESSION_COOKIE_NAME)
 
 
@@ -43,9 +40,6 @@ def _get_session_cookie(request: Request) -> Optional[str]:
 def _cached_session_validation(session_id: str) -> Optional[dict]:
     """
     Validate session with Okta API (cached).
-
-    Note: This is a simple in-memory cache. In production, consider using
-    Redis or similar for distributed caching.
     """
     if not OKTA_DOMAIN or not OKTA_API_TOKEN:
         return None
@@ -84,10 +78,7 @@ def validate_session(session_id: str) -> Optional[OktaSession]:
 
 def clear_session_cache(session_id: str = None):
     """Clear cached session validation."""
-    if session_id:
-        _cached_session_validation.cache_clear()
-    else:
-        _cached_session_validation.cache_clear()
+    _cached_session_validation.cache_clear()
 
 
 async def require_auth(request: Request) -> AuthenticatedUser:

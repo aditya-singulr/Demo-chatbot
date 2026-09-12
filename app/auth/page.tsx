@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { login, hasSession, OKTA_DOMAIN } from "@/lib/okta";
+import { login, checkAuthStatus, OKTA_DOMAIN } from "@/lib/okta";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,11 +13,13 @@ export default function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
-    if (hasSession()) {
-      router.replace("/auth/chat");
-    } else {
-      setCheckingSession(false);
-    }
+    checkAuthStatus().then((status) => {
+      if (status.authenticated) {
+        router.replace("/auth/chat");
+      } else {
+        setCheckingSession(false);
+      }
+    });
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -26,17 +28,18 @@ export default function LoginPage() {
     setLoading(true);
 
     if (!OKTA_DOMAIN) {
-      setError("Okta domain not configured. Set NEXT_PUBLIC_OKTA_DOMAIN.");
+      setError("Okta domain not configured.");
       setLoading(false);
       return;
     }
 
     try {
-      await login(username, password);
-      router.push("/auth/chat");
+      // This will redirect to Okta, then back to /auth/chat
+      const redirectUrl = window.location.origin + "/auth/chat";
+      await login(username, password, redirectUrl);
+      // If we get here, redirect didn't happen (shouldn't occur)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
-    } finally {
       setLoading(false);
     }
   }

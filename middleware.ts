@@ -12,7 +12,7 @@ export function middleware(request: NextRequest) {
   const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN || "singulr.okta.com";
 
   const { pathname } = request.nextUrl;
-  const cookieName = process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "okta_session";
+  const cookieName = process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "sid";
   const sessionCookie = request.cookies.get(cookieName);
 
   // If accessing root without session, redirect to /auth

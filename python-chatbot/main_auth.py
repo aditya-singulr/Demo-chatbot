@@ -1,7 +1,7 @@
 """
 Authenticated backend for NovaPay chatbot.
 
-Requires valid Okta session cookie for all chat endpoints.
+Requires valid Okta session cookie (sid) for all chat endpoints.
 Uses the same provider system as main.py but with auth middleware.
 """
 
@@ -152,11 +152,6 @@ async def logout(request: Request, user: AuthenticatedUser = Depends(require_aut
     success = logout_session(user.session_id)
     response = JSONResponse(
         content={"success": success, "message": "Logged out" if success else "Logout failed"}
-    )
-    # Clear the cookie on the response
-    response.delete_cookie(
-        key=os.getenv("OKTA_SESSION_COOKIE_NAME", "okta_session"),
-        path="/",
     )
     return response
 

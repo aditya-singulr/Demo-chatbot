@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { hasSession, logout, getSessionCookie } from "@/lib/okta";
+import { logout, checkAuthStatus } from "@/lib/okta";
 
 type Provider = { id: string; label: string; supports_files?: boolean; file_accept?: string };
 
@@ -143,34 +143,16 @@ export default function AuthenticatedChat() {
   const canSend = (!!input.trim() || !!pendingFile) && !loading;
 
   useEffect(() => {
-    if (!hasSession()) {
-      router.replace("/auth");
-      return;
-    }
-
-    fetch("/api/auth/ui", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: "test" }] }),
-      credentials: "include",
-    })
-      .then((res) => {
-        if (res.status === 401) {
-          logout();
-          router.replace("/auth");
-          return null;
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (data?.user) {
-          setUser(data.user);
-        }
-        setCheckingAuth(false);
-      })
-      .catch(() => {
-        setCheckingAuth(false);
-      });
+    checkAuthStatus().then((status) => {
+      if (!status.authenticated) {
+        router.replace("/auth");
+        return;
+      }
+      if (status.login) {
+        setUser({ login: status.login, user_id: "" });
+      }
+      setCheckingAuth(false);
+    });
 
     fetch("/api/auth/providers")
       .then((res) => res.json())
@@ -198,7 +180,6 @@ export default function AuthenticatedChat() {
 
   function handleLogout() {
     logout();
-    router.push("/auth");
   }
 
   function changeProvider(id: string) {
@@ -268,7 +249,6 @@ export default function AuthenticatedChat() {
 
       if (res.status === 401) {
         logout();
-        router.replace("/auth");
         return;
       }
 
