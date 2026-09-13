@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { logout, checkAuthStatus } from "@/lib/okta";
+import { logout, hasValidTokens, getAccessToken, getUserFromToken } from "@/lib/okta";
 
 type Provider = { id: string; label: string; supports_files?: boolean; file_accept?: string };
 
@@ -19,8 +19,8 @@ type Message = {
 };
 
 type User = {
-  login: string;
-  user_id: string;
+  email?: string;
+  name?: string;
 };
 
 const FALLBACK_PROVIDERS: Provider[] = [
@@ -143,16 +143,16 @@ export default function AuthenticatedChat() {
   const canSend = (!!input.trim() || !!pendingFile) && !loading;
 
   useEffect(() => {
-    checkAuthStatus().then((status) => {
-      if (!status.authenticated) {
-        router.replace("/auth");
-        return;
-      }
-      if (status.login) {
-        setUser({ login: status.login, user_id: "" });
-      }
-      setCheckingAuth(false);
-    });
+    if (!hasValidTokens()) {
+      router.replace("/auth");
+      return;
+    }
+
+    const userInfo = getUserFromToken();
+    if (userInfo) {
+      setUser({ email: userInfo.email, name: userInfo.name });
+    }
+    setCheckingAuth(false);
 
     fetch("/api/auth/providers")
       .then((res) => res.json())
@@ -221,6 +221,12 @@ export default function AuthenticatedChat() {
     const text = input.trim();
     if ((!text && !pendingFile) || loading) return;
 
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      logout();
+      return;
+    }
+
     const attachments = pendingFile ? [pendingFile] : undefined;
     const userMessage: Message = { role: "user", content: text, ...(attachments ? { attachments } : {}) };
     const newMessages: Message[] = [...messages, userMessage];
@@ -233,8 +239,10 @@ export default function AuthenticatedChat() {
     try {
       const res = await fetch("/api/auth/ui", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           messages: newMessages
             .filter((m) => (m.content != null && m.content !== "") || (m.attachments && m.attachments.length > 0))
@@ -256,10 +264,6 @@ export default function AuthenticatedChat() {
 
       if (!res.ok) {
         throw new Error(data.upstream_body ?? data.error ?? "Request failed");
-      }
-
-      if (data.user) {
-        setUser(data.user);
       }
 
       setMessages([...newMessages, { role: "assistant", content: data.message ?? "" }]);
@@ -291,13 +295,13 @@ export default function AuthenticatedChat() {
               <p className="text-sm font-semibold text-gray-900">NovaPay Support — Aria</p>
               <p className="text-xs text-emerald-600 font-medium flex items-center gap-1">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                Authenticated Session
+                Authenticated via Okta
               </p>
             </div>
           </div>
           <div className="flex items-center gap-4">
             {user && (
-              <span className="text-xs text-gray-500 hidden sm:inline">{user.login}</span>
+              <span className="text-xs text-gray-500 hidden sm:inline">{user.email || user.name}</span>
             )}
             <ProviderSelect
               value={provider}
@@ -322,7 +326,7 @@ export default function AuthenticatedChat() {
               🔐
             </div>
             <div>
-              <p className="font-medium text-gray-600">Welcome{user ? `, ${user.login.split("@")[0]}` : ""}!</p>
+              <p className="font-medium text-gray-600">Welcome{user?.name ? `, ${user.name.split(" ")[0]}` : user?.email ? `, ${user.email.split("@")[0]}` : ""}!</p>
               <p className="text-sm">You are securely authenticated. How can Aria help you today?</p>
             </div>
           </div>

@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
     const TIMEOUT_MS =
       Number(process.env.UI_BACKEND_TIMEOUT_MS) || (hasAttachments ? 60000 : 15000);
 
-    // Forward cookies for auth
-    const cookieHeader = req.headers.get("cookie") || "";
+    // Forward Authorization header for OAuth
+    const authHeader = req.headers.get("authorization") || "";
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Cookie: cookieHeader,
+        ...(authHeader ? { Authorization: authHeader } : {}),
       },
       body: JSON.stringify({ messages: pyMessages, provider }),
       signal: controller.signal,

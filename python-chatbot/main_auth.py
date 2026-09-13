@@ -1,8 +1,8 @@
 """
 Authenticated backend for NovaPay chatbot.
 
-Requires valid Okta session cookie (sid) for all chat endpoints.
-Uses the same provider system as main.py but with auth middleware.
+Requires valid Okta access token (Bearer) for all chat endpoints.
+Uses the same provider system as main.py but with OAuth token auth.
 """
 
 import asyncio
@@ -15,16 +15,15 @@ env_config.setup(__name__)
 
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import providers
-from okta_auth import require_auth, optional_auth, logout_session, AuthenticatedUser
+from okta_auth import require_auth, optional_auth, AuthenticatedUser
 
 app = FastAPI(title="NovaPay Python Chatbot (Authenticated)")
 
-# CORS configuration for cookie-based auth
-ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3001").split(",")
+# CORS configuration for token-based auth
+ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3001,https://chat-demo-external.singulr.ai").split(",")
 
 app.add_middleware(
     CORSMiddleware,
@@ -104,7 +103,7 @@ async def ui_chat(
 ):
     """
     Chat endpoint requiring Okta authentication.
-    User info from session is available in the `user` parameter.
+    User info from token is available in the `user` parameter.
     """
     messages = _messages_payload(req.messages)
     if not messages:
@@ -125,7 +124,7 @@ async def ui_chat(
             "total_attacks": 0,
         },
         "user": {
-            "login": user.login,
+            "email": user.email,
             "user_id": user.user_id,
         },
     }
@@ -141,19 +140,10 @@ async def get_current_user(user: AuthenticatedUser = Depends(require_auth)):
     """Get current authenticated user info."""
     return {
         "user_id": user.user_id,
-        "login": user.login,
+        "email": user.email,
+        "name": user.name,
         "authenticated": True,
     }
-
-
-@app.post("/api/logout")
-async def logout(request: Request, user: AuthenticatedUser = Depends(require_auth)):
-    """Revoke the current session with Okta."""
-    success = logout_session(user.session_id)
-    response = JSONResponse(
-        content={"success": success, "message": "Logged out" if success else "Logout failed"}
-    )
-    return response
 
 
 @app.get("/api/auth/check")
@@ -163,7 +153,7 @@ async def check_auth(user: Optional[AuthenticatedUser] = Depends(optional_auth))
         return {
             "authenticated": True,
             "user_id": user.user_id,
-            "login": user.login,
+            "email": user.email,
         }
     return {"authenticated": False}
 
@@ -174,7 +164,7 @@ async def health():
         "status": "ok",
         "backend": "python-auth",
         "model": BEDROCK_MODEL_ID,
-        "auth": "okta",
+        "auth": "okta-oauth",
     }
 
 

@@ -1,113 +1,244 @@
 /**
- * Okta authentication utilities for frontend.
+ * Okta OAuth/OIDC utilities for frontend.
  *
- * Uses Okta's Primary Authentication API + redirect flow.
- * After /authn, redirects to Okta to set the session cookie.
+ * Implements Authorization Code flow with PKCE for Single-Page Applications.
  */
 
-export const OKTA_DOMAIN = process.env.NEXT_PUBLIC_OKTA_DOMAIN || "singulr.okta.com";
-export const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME || "sid";
+export const OKTA_DOMAIN = "singulr.okta.com";
+export const OKTA_CLIENT_ID = "0oa26y1wj6p5lppaj1d8";
+export const OKTA_REDIRECT_URI = typeof window !== "undefined"
+  ? `${window.location.origin}/auth/callback`
+  : "https://chat-demo-external.singulr.ai/auth/callback";
+export const OKTA_LOGOUT_REDIRECT_URI = typeof window !== "undefined"
+  ? `${window.location.origin}/auth`
+  : "https://chat-demo-external.singulr.ai/auth";
 
-export type OktaAuthResponse = {
-  status: "SUCCESS" | "MFA_REQUIRED" | "LOCKED_OUT" | "PASSWORD_EXPIRED" | string;
-  sessionToken?: string;
-  expiresAt?: string;
-  _embedded?: {
-    user?: {
-      id: string;
-      profile: {
-        login: string;
-        firstName?: string;
-        lastName?: string;
-      };
-    };
-  };
-  errorCode?: string;
-  errorSummary?: string;
+const TOKEN_STORAGE_KEY = "okta_tokens";
+const PKCE_STORAGE_KEY = "okta_pkce";
+
+type OktaTokens = {
+  access_token: string;
+  id_token: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+  expires_at: number; // Unix timestamp when token expires
+};
+
+type PKCEData = {
+  code_verifier: string;
+  state: string;
 };
 
 /**
- * Authenticate with Okta using username and password.
- * Returns session token on success.
+ * Generate a random string for PKCE code_verifier and state.
  */
-export async function primaryAuth(
-  username: string,
-  password: string
-): Promise<OktaAuthResponse> {
-  const url = `https://${OKTA_DOMAIN}/api/v1/authn`;
-  console.log("primaryAuth: calling", url);
+function generateRandomString(length: number): string {
+  const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array, (byte) => charset[byte % charset.length]).join("");
+}
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+/**
+ * Generate SHA-256 hash and base64url encode it for PKCE code_challenge.
+ */
+async function generateCodeChallenge(codeVerifier: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(codeVerifier);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(digest)));
+  // Convert to base64url
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * Store PKCE data for callback verification.
+ */
+function storePKCE(data: PKCEData): void {
+  sessionStorage.setItem(PKCE_STORAGE_KEY, JSON.stringify(data));
+}
+
+/**
+ * Retrieve and clear PKCE data.
+ */
+function retrievePKCE(): PKCEData | null {
+  const data = sessionStorage.getItem(PKCE_STORAGE_KEY);
+  if (data) {
+    sessionStorage.removeItem(PKCE_STORAGE_KEY);
+    return JSON.parse(data);
+  }
+  return null;
+}
+
+/**
+ * Store tokens in localStorage.
+ */
+function storeTokens(tokens: OktaTokens): void {
+  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+}
+
+/**
+ * Retrieve tokens from localStorage.
+ */
+export function getTokens(): OktaTokens | null {
+  const data = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (data) {
+    return JSON.parse(data);
+  }
+  return null;
+}
+
+/**
+ * Clear stored tokens.
+ */
+export function clearTokens(): void {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+/**
+ * Check if user has valid (non-expired) tokens.
+ */
+export function hasValidTokens(): boolean {
+  const tokens = getTokens();
+  if (!tokens) return false;
+  // Check if token is expired (with 60s buffer)
+  return tokens.expires_at > Date.now() / 1000 + 60;
+}
+
+/**
+ * Get the access token if valid.
+ */
+export function getAccessToken(): string | null {
+  if (!hasValidTokens()) return null;
+  return getTokens()?.access_token ?? null;
+}
+
+/**
+ * Get the ID token if valid.
+ */
+export function getIdToken(): string | null {
+  if (!hasValidTokens()) return null;
+  return getTokens()?.id_token ?? null;
+}
+
+/**
+ * Initiate OAuth login - redirects to Okta.
+ */
+export async function initiateLogin(): Promise<void> {
+  const codeVerifier = generateRandomString(64);
+  const state = generateRandomString(32);
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+  // Store PKCE data for callback
+  storePKCE({ code_verifier: codeVerifier, state });
+
+  const params = new URLSearchParams({
+    client_id: OKTA_CLIENT_ID,
+    response_type: "code",
+    scope: "openid profile email",
+    redirect_uri: OKTA_REDIRECT_URI,
+    state: state,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
   });
 
-  console.log("primaryAuth: response status", response.status);
-  const data = await response.json();
-  console.log("primaryAuth: response data", data);
+  const authorizeUrl = `https://${OKTA_DOMAIN}/oauth2/default/v1/authorize?${params.toString()}`;
+  console.log("Redirecting to Okta:", authorizeUrl);
+  window.location.href = authorizeUrl;
+}
+
+/**
+ * Handle OAuth callback - exchange code for tokens.
+ */
+export async function handleCallback(code: string, state: string): Promise<OktaTokens> {
+  const pkce = retrievePKCE();
+
+  if (!pkce) {
+    throw new Error("No PKCE data found. Please try logging in again.");
+  }
+
+  if (pkce.state !== state) {
+    throw new Error("State mismatch. Possible CSRF attack.");
+  }
+
+  const params = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: OKTA_CLIENT_ID,
+    redirect_uri: OKTA_REDIRECT_URI,
+    code: code,
+    code_verifier: pkce.code_verifier,
+  });
+
+  const response = await fetch(`https://${OKTA_DOMAIN}/oauth2/default/v1/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
 
   if (!response.ok) {
-    throw new Error(data.errorSummary || "Authentication failed");
+    const error = await response.json();
+    throw new Error(error.error_description || "Failed to exchange code for tokens");
   }
 
-  return data;
+  const tokenResponse = await response.json();
+
+  const tokens: OktaTokens = {
+    ...tokenResponse,
+    expires_at: Math.floor(Date.now() / 1000) + tokenResponse.expires_in,
+  };
+
+  storeTokens(tokens);
+  return tokens;
 }
 
 /**
- * Redirect to Okta to set session cookie.
- * After this, Okta redirects back to redirectUrl with the sid cookie set.
- */
-export function redirectToOktaSession(sessionToken: string, redirectUrl: string): void {
-  const url = `https://${OKTA_DOMAIN}/login/sessionCookieRedirect?token=${encodeURIComponent(sessionToken)}&redirectUrl=${encodeURIComponent(redirectUrl)}`;
-  console.log("redirectToOktaSession: sessionToken received, length:", sessionToken?.length);
-  console.log("redirectToOktaSession: redirecting to:", url);
-  window.location.href = url;
-}
-
-/**
- * Full login flow: authenticate and redirect to Okta for cookie.
- */
-export async function login(
-  username: string,
-  password: string,
-  redirectUrl: string
-): Promise<void> {
-  const authResponse = await primaryAuth(username, password);
-
-  if (authResponse.status !== "SUCCESS") {
-    throw new Error(`Authentication status: ${authResponse.status}`);
-  }
-
-  if (!authResponse.sessionToken) {
-    throw new Error("No session token received");
-  }
-
-  // Redirect to Okta to set the session cookie
-  redirectToOktaSession(authResponse.sessionToken, redirectUrl);
-}
-
-/**
- * Check if user has Okta session by calling backend.
- * The sid cookie is HttpOnly so we can't check it directly.
- */
-export async function checkAuthStatus(): Promise<{ authenticated: boolean; login?: string }> {
-  try {
-    const res = await fetch("/api/auth/check", { credentials: "include" });
-    if (res.ok) {
-      return await res.json();
-    }
-    return { authenticated: false };
-  } catch {
-    return { authenticated: false };
-  }
-}
-
-/**
- * Logout: redirect to Okta logout or just clear local state.
+ * Logout - clear tokens and redirect to Okta logout.
  */
 export function logout(): void {
-  // Redirect to Okta logout to clear the sid cookie
-  const returnUrl = window.location.origin + "/auth";
-  window.location.href = `https://${OKTA_DOMAIN}/login/signout?fromURI=${encodeURIComponent(returnUrl)}`;
+  const idToken = getIdToken();
+  clearTokens();
+
+  if (idToken) {
+    const params = new URLSearchParams({
+      id_token_hint: idToken,
+      post_logout_redirect_uri: OKTA_LOGOUT_REDIRECT_URI,
+    });
+    window.location.href = `https://${OKTA_DOMAIN}/oauth2/default/v1/logout?${params.toString()}`;
+  } else {
+    window.location.href = OKTA_LOGOUT_REDIRECT_URI;
+  }
+}
+
+/**
+ * Decode JWT payload (without verification - for display purposes only).
+ */
+export function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get user info from ID token.
+ */
+export function getUserFromToken(): { email?: string; name?: string; sub?: string } | null {
+  const idToken = getIdToken();
+  if (!idToken) return null;
+
+  const payload = decodeJwtPayload(idToken);
+  if (!payload) return null;
+
+  return {
+    email: payload.email as string | undefined,
+    name: payload.name as string | undefined,
+    sub: payload.sub as string | undefined,
+  };
 }

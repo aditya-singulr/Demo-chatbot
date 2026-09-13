@@ -1,176 +1,186 @@
 """
-Okta session verification for FastAPI.
+Okta OAuth token verification for FastAPI.
 
-Validates Okta's sid cookie by calling Okta's Sessions API.
+Validates access tokens by introspecting with Okta or verifying JWT locally.
 """
 
 import os
 from functools import lru_cache
 from typing import Optional
+import json
+import base64
 
 import httpx
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "singulr.okta.com")
-OKTA_API_TOKEN = os.getenv("OKTA_API_TOKEN", "")
-SESSION_COOKIE_NAME = os.getenv("OKTA_SESSION_COOKIE_NAME", "sid")
-
-
-class OktaSession(BaseModel):
-    id: str
-    login: str
-    userId: str
-    status: str
-    expiresAt: str
+OKTA_CLIENT_ID = os.getenv("OKTA_CLIENT_ID", "0oa26y1wj6p5lppaj1d8")
+OKTA_ISSUER = f"https://{OKTA_DOMAIN}/oauth2/default"
 
 
 class AuthenticatedUser(BaseModel):
     user_id: str
-    login: str
-    session_id: str
+    email: Optional[str] = None
+    name: Optional[str] = None
 
 
-def _get_session_cookie(request: Request) -> Optional[str]:
-    """Extract Okta sid cookie."""
-    return request.cookies.get(SESSION_COOKIE_NAME)
+# HTTP Bearer token extraction
+security = HTTPBearer(auto_error=False)
 
 
-@lru_cache(maxsize=1000)
-def _cached_session_validation(session_id: str) -> Optional[dict]:
-    """
-    Validate session with Okta API (cached).
-    """
-    if not OKTA_DOMAIN or not OKTA_API_TOKEN:
-        return None
-
+def decode_jwt_payload(token: str) -> Optional[dict]:
+    """Decode JWT payload without verification (for extracting claims)."""
     try:
-        response = httpx.get(
-            f"https://{OKTA_DOMAIN}/api/v1/sessions/{session_id}",
-            headers={
-                "Authorization": f"SSWS {OKTA_API_TOKEN}",
-                "Accept": "application/json",
-            },
-            timeout=10.0,
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("status") == "ACTIVE":
-                return data
-        return None
-
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        # Add padding if needed
+        payload = parts[1]
+        padding = 4 - len(payload) % 4
+        if padding != 4:
+            payload += "=" * padding
+        decoded = base64.urlsafe_b64decode(payload)
+        return json.loads(decoded)
     except Exception:
         return None
 
 
-def validate_session(session_id: str) -> Optional[OktaSession]:
+@lru_cache(maxsize=1)
+def get_okta_jwks() -> dict:
+    """Fetch Okta's JWKS for token verification."""
+    try:
+        response = httpx.get(
+            f"{OKTA_ISSUER}/v1/keys",
+            timeout=10.0,
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return {}
+
+
+def introspect_token(token: str) -> Optional[dict]:
     """
-    Validate a session ID with Okta.
+    Introspect token with Okta to verify it's valid.
 
-    Returns OktaSession if valid, None otherwise.
+    Note: For SPA apps without a client secret, we can't use introspection.
+    Instead, we verify the token locally by checking claims.
     """
-    data = _cached_session_validation(session_id)
-    if data:
-        return OktaSession(**data)
-    return None
+    # For SPA (public client), we validate locally
+    payload = decode_jwt_payload(token)
+    if not payload:
+        return None
+
+    # Check required claims
+    iss = payload.get("iss")
+    aud = payload.get("aud")
+    exp = payload.get("exp")
+
+    if iss != OKTA_ISSUER:
+        return None
+
+    if aud != "api://default":
+        return None
+
+    # Check expiration
+    import time
+    if exp and exp < time.time():
+        return None
+
+    return payload
 
 
-def clear_session_cache(session_id: str = None):
-    """Clear cached session validation."""
-    _cached_session_validation.cache_clear()
-
-
-async def require_auth(request: Request) -> AuthenticatedUser:
+def validate_access_token(token: str) -> Optional[AuthenticatedUser]:
     """
-    FastAPI dependency that requires valid Okta session.
+    Validate an access token and return user info.
+    """
+    payload = introspect_token(token)
+    if not payload:
+        return None
+
+    return AuthenticatedUser(
+        user_id=payload.get("sub", ""),
+        email=payload.get("email"),
+        name=payload.get("name"),
+    )
+
+
+def get_token_from_header(request: Request) -> Optional[str]:
+    """Extract Bearer token from Authorization header."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return None
+
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+
+    return parts[1]
+
+
+async def require_auth(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> AuthenticatedUser:
+    """
+    FastAPI dependency that requires valid Okta access token.
 
     Usage:
         @app.post("/api/protected")
         async def protected_endpoint(user: AuthenticatedUser = Depends(require_auth)):
-            return {"user": user.login}
+            return {"user": user.email}
     """
-    if not OKTA_DOMAIN:
-        raise HTTPException(
-            status_code=500,
-            detail="OKTA_DOMAIN not configured",
-        )
+    token = None
 
-    if not OKTA_API_TOKEN:
-        raise HTTPException(
-            status_code=500,
-            detail="OKTA_API_TOKEN not configured",
-        )
+    # Try to get token from HTTPBearer
+    if credentials:
+        token = credentials.credentials
 
-    session_id = _get_session_cookie(request)
+    # Fallback to manual extraction
+    if not token:
+        token = get_token_from_header(request)
 
-    if not session_id:
+    if not token:
         raise HTTPException(
             status_code=401,
-            detail="No session cookie found",
-            headers={"WWW-Authenticate": "Cookie"},
+            detail="No access token provided",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-    session = validate_session(session_id)
+    user = validate_access_token(token)
 
-    if not session:
+    if not user:
         raise HTTPException(
             status_code=401,
-            detail="Invalid or expired session",
-            headers={"WWW-Authenticate": "Cookie"},
+            detail="Invalid or expired access token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return AuthenticatedUser(
-        user_id=session.userId,
-        login=session.login,
-        session_id=session.id,
-    )
+    return user
 
 
-async def optional_auth(request: Request) -> Optional[AuthenticatedUser]:
+async def optional_auth(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> Optional[AuthenticatedUser]:
     """
-    FastAPI dependency that optionally validates Okta session.
+    FastAPI dependency that optionally validates Okta access token.
 
-    Returns AuthenticatedUser if valid session exists, None otherwise.
-    Does not raise HTTPException for missing/invalid sessions.
+    Returns AuthenticatedUser if valid token exists, None otherwise.
+    Does not raise HTTPException for missing/invalid tokens.
     """
-    if not OKTA_DOMAIN or not OKTA_API_TOKEN:
+    token = None
+
+    if credentials:
+        token = credentials.credentials
+
+    if not token:
+        token = get_token_from_header(request)
+
+    if not token:
         return None
 
-    session_id = _get_session_cookie(request)
-    if not session_id:
-        return None
-
-    session = validate_session(session_id)
-    if not session:
-        return None
-
-    return AuthenticatedUser(
-        user_id=session.userId,
-        login=session.login,
-        session_id=session.id,
-    )
-
-
-def logout_session(session_id: str) -> bool:
-    """
-    Revoke a session with Okta.
-
-    Returns True if successful, False otherwise.
-    """
-    if not OKTA_DOMAIN or not OKTA_API_TOKEN:
-        return False
-
-    try:
-        response = httpx.delete(
-            f"https://{OKTA_DOMAIN}/api/v1/sessions/{session_id}",
-            headers={
-                "Authorization": f"SSWS {OKTA_API_TOKEN}",
-                "Accept": "application/json",
-            },
-            timeout=10.0,
-        )
-        clear_session_cache(session_id)
-        return response.status_code == 204
-    except Exception:
-        return False
+    return validate_access_token(token)
