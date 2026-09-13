@@ -143,7 +143,7 @@ export async function initiateLogin(): Promise<void> {
     code_challenge_method: "S256",
   });
 
-  const authorizeUrl = `https://${OKTA_DOMAIN}/oauth2/default/v1/authorize?${params.toString()}`;
+  const authorizeUrl = `https://${OKTA_DOMAIN}/oauth2/v1/authorize?${params.toString()}`;
   console.log("Redirecting to Okta:", authorizeUrl);
   window.location.href = authorizeUrl;
 }
@@ -170,7 +170,7 @@ export async function handleCallback(code: string, state: string): Promise<OktaT
     code_verifier: pkce.code_verifier,
   });
 
-  const response = await fetch(`https://${OKTA_DOMAIN}/oauth2/default/v1/token`, {
+  const response = await fetch(`https://${OKTA_DOMAIN}/oauth2/v1/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -206,7 +206,7 @@ export function logout(): void {
       id_token_hint: idToken,
       post_logout_redirect_uri: OKTA_LOGOUT_REDIRECT_URI,
     });
-    window.location.href = `https://${OKTA_DOMAIN}/oauth2/default/v1/logout?${params.toString()}`;
+    window.location.href = `https://${OKTA_DOMAIN}/oauth2/v1/logout?${params.toString()}`;
   } else {
     window.location.href = OKTA_LOGOUT_REDIRECT_URI;
   }

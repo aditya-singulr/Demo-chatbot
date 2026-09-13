@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "singulr.okta.com")
 OKTA_CLIENT_ID = os.getenv("OKTA_CLIENT_ID", "0oa26y1wj6p5lppaj1d8")
-OKTA_ISSUER = f"https://{OKTA_DOMAIN}/oauth2/default"
+OKTA_ISSUER = f"https://{OKTA_DOMAIN}"
 
 
 class AuthenticatedUser(BaseModel):
@@ -52,7 +52,7 @@ def get_okta_jwks() -> dict:
     """Fetch Okta's JWKS for token verification."""
     try:
         response = httpx.get(
-            f"{OKTA_ISSUER}/v1/keys",
+            f"https://{OKTA_DOMAIN}/oauth2/v1/keys",
             timeout=10.0,
         )
         if response.status_code == 200:
@@ -82,7 +82,7 @@ def introspect_token(token: str) -> Optional[dict]:
     if iss != OKTA_ISSUER:
         return None
 
-    if aud != "api://default":
+    if aud != OKTA_CLIENT_ID:
         return None
 
     # Check expiration
