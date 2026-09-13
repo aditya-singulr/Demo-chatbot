@@ -94,6 +94,8 @@ if (process.env.OKTA_DOMAIN && !process.env.NEXT_PUBLIC_OKTA_DOMAIN) {
 if (process.env.OKTA_SESSION_COOKIE_NAME && !process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME) {
   process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME = process.env.OKTA_SESSION_COOKIE_NAME;
 }
+// Enable auth mode for middleware redirect
+process.env.NEXT_PUBLIC_AUTH_MODE = "okta";
 
 console.log(`Loading env from ${envPath}`);
 console.log(`Starting Next.js (auth) on port ${uiPort} (${nextCmd})`);
