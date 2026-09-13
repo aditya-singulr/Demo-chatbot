@@ -62,14 +62,38 @@ def get_okta_jwks() -> dict:
     return {}
 
 
+def validate_token_via_userinfo(token: str) -> Optional[dict]:
+    """
+    Validate access token by calling Okta's /userinfo endpoint.
+
+    This works for both opaque tokens and JWTs from Org Authorization Server.
+    If the token is valid, Okta returns user info; otherwise it returns 401.
+    """
+    try:
+        response = httpx.get(
+            f"https://{OKTA_DOMAIN}/oauth2/v1/userinfo",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10.0,
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"Userinfo validation error: {e}")
+    return None
+
+
 def introspect_token(token: str) -> Optional[dict]:
     """
-    Introspect token with Okta to verify it's valid.
+    Validate token - first try userinfo endpoint, fallback to JWT decode.
 
-    Note: For SPA apps without a client secret, we can't use introspection.
-    Instead, we verify the token locally by checking claims.
+    For Org Authorization Server, userinfo is the reliable method.
     """
-    # For SPA (public client), we validate locally
+    # Primary: Use userinfo endpoint (works for opaque and JWT tokens)
+    userinfo = validate_token_via_userinfo(token)
+    if userinfo:
+        return userinfo
+
+    # Fallback: Try to decode as JWT (for custom auth servers)
     payload = decode_jwt_payload(token)
     if not payload:
         return None
