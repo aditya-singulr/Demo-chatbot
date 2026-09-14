@@ -1,0 +1,8 @@
+# Sample prompts for NovaPay chatbot testing
+# One prompt per line, lines starting with # are ignored
+
+Hello, I need help with my NovaPay account.
+How do I reset my password?
+What are the transaction limits for my account?
+Can you help me dispute a transaction?
+How do I add a new payment method?
