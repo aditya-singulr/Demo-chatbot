@@ -1,0 +1,166 @@
+# Chat Test Results - 2026-09-13T16:08:54.084191
+# Total prompts: 5
+================================================================================
+
+[1] PROMPT:
+Hello, I need help with my NovaPay account.
+
+RESPONSE (success, 4149ms):
+Hello! 👋 I'm Aria, and I'm here to help you with your NovaPay account.
+
+I'd be happy to assist you today. Could you tell me a bit more about what you need help with? For example, are you experiencing issues with:
+
+- Logging in or accessing your account
+- Sending or receiving a payment
+- Your card (virtual or physical)
+- A specific transaction
+- Account verification
+- Something else
+
+The more details you can share, the better I can help you! 😊
+
+--------------------------------------------------------------------------------
+
+[2] PROMPT:
+How do I reset my password?
+
+RESPONSE (success, 5726ms):
+Great question! Here's how to reset your NovaPay password:
+
+**Via the Login Page:**
+1. Go to the NovaPay login page
+2. Click on **"Forgot Password?"** below the login button
+3. Enter the email address associated with your account
+4. Click **"Send Reset Link"**
+5. Check your email inbox (and spam folder, just in case!)
+6. Click the reset link in the email
+7. Create your new password and confirm it
+
+**Via the Mobile App:**
+1. Open the NovaPay app
+2. Tap **"Forgot Password?"** on the login screen
+3. Follow the same steps as above
+
+**Password Tips:**
+- Use at least 8 characters
+- Include a mix of uppercase, lowercase, numbers, and symbols
+- Avoid using easily guessable information
+
+**Not receiving the reset email?**
+- Check your spam/junk folder
+- Make sure you're using the correct email address
+- Wait a few minutes and try again
+
+If you're still having trouble after trying these steps, let me know and I can help you escalate this to our support team for additional assistance! 🔐
+
+--------------------------------------------------------------------------------
+
+[3] PROMPT:
+What are the transaction limits for my account?
+
+RESPONSE (success, 6828ms):
+Good question! Transaction limits on NovaPay can vary based on a few factors:
+
+**Factors that affect your limits:**
+- **Account verification level** (unverified, basic, or fully verified)
+- **Account age and history**
+- **Account type** (personal vs. business)
+- **Payment method** (bank transfer, card, balance)
+
+**To check YOUR specific limits:**
+1. Log into your NovaPay account
+2. Go to **Settings** or **Account Settings**
+3. Look for **"Limits"** or **"Transaction Limits"**
+4. You'll see your current daily/monthly sending and receiving limits
+
+**Generally speaking:**
+- Unverified accounts typically have lower limits
+- Completing identity verification usually increases your limits significantly
+- Business accounts often have higher limits than personal accounts
+
+**Need higher limits?**
+If you need to increase your limits, you can usually:
+- Complete full identity verification (if you haven't already)
+- Contact our support team to request a limit increase for your specific needs
+
+Would you like help with verifying your account to potentially increase your limits, or do you have questions about a specific transaction you're trying to make? 💳
+
+--------------------------------------------------------------------------------
+
+[4] PROMPT:
+Can you help me dispute a transaction?
+
+RESPONSE (success, 7530ms):
+Absolutely! I can help guide you through the dispute process. Let me walk you through it:
+
+**To dispute a transaction:**
+
+1. **Log into your NovaPay account**
+2. Go to **"Transactions"** or **"Activity"**
+3. Find and select the transaction you want to dispute
+4. Click **"Report a Problem"** or **"Dispute Transaction"**
+5. Select the reason for your dispute:
+   - Unauthorized transaction
+   - Item not received
+   - Item significantly different than described
+   - Duplicate charge
+   - Incorrect amount
+   - Other
+6. Provide details and any supporting documentation
+7. Submit your dispute
+
+**What happens next:**
+- You'll receive a confirmation email
+- Our team will review your case (typically within 5-10 business days)
+- We may request additional information
+- You'll be notified of the outcome via email
+
+**Important timing:**
+- Disputes should be filed within **60-180 days** of the transaction (depending on the type)
+- The sooner you report it, the better!
+
+**Before you dispute, consider:**
+- Have you tried contacting the merchant directly? Sometimes that's faster
+- Do you have receipts, screenshots, or tracking info? These help your case
+
+Would you like me to help you gather the information you'll need for your dispute, or do you have specific questions about a transaction? 🛡️
+
+--------------------------------------------------------------------------------
+
+[5] PROMPT:
+How do I add a new payment method?
+
+RESPONSE (success, 8734ms):
+Great! Adding a payment method to your NovaPay account is straightforward. Here's how:
+
+**Via Web:**
+1. Log into your NovaPay account
+2. Go to **Settings** or click your profile icon
+3. Select **"Payment Methods"** or **"Linked Accounts"**
+4. Click **"Add Payment Method"** or the **"+"** button
+5. Choose the type you want to add:
+   - **Bank Account** (for ACH transfers)
+   - **Debit Card**
+   - **Credit Card**
+6. Enter the required information
+7. Verify the payment method (you may receive small test deposits or a verification code)
+8. Confirm and save
+
+**Via Mobile App:**
+1. Open the NovaPay app
+2. Tap the **menu icon** or **profile**
+3. Go to **"Payment Methods"**
+4. Tap **"Add New"**
+5. Follow the same steps as above
+
+**Verification:**
+- **Bank accounts**: We'll send 2 small deposits (usually within 1-3 business days). Verify the amounts to confirm.
+- **Cards**: You may need to verify with a small temporary charge or a code from your card statement.
+
+**Security tip:** 🔒
+Make sure you're on a secure connection when adding payment methods, and never share your verification codes with anyone!
+
+Is there a specific type of payment method you're trying to add, or are you running into any issues with the process?
+
+--------------------------------------------------------------------------------
+
