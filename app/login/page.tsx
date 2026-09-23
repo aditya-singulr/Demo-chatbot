@@ -100,9 +100,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-xs text-gray-400 text-center mt-6">
+          {/* <p className="text-xs text-gray-400 text-center mt-6">
             Default credentials: <span className="font-medium text-gray-500">demo / demo123</span>
-          </p>
+          </p> */}
         </div>
 
         <p className="text-xs text-gray-400 text-center mt-4">

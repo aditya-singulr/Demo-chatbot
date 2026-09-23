@@ -31,8 +31,8 @@ app.add_middleware(
 
 BEDROCK_MODEL_ID = providers.BEDROCK_MODEL_ID
 
-LOGIN_USERNAME = os.getenv("LOGIN_USERNAME", "demo")
-LOGIN_PASSWORD = os.getenv("LOGIN_PASSWORD", "demo123")
+LOGIN_USERNAME = os.getenv("LOGIN_USERNAME", "testuser")
+LOGIN_PASSWORD = os.getenv("LOGIN_PASSWORD", "Secrets!23")
 LOGIN_TOKEN = os.getenv("LOGIN_TOKEN", "novapay-static-token")
 
 SYSTEM_PROMPT = (
