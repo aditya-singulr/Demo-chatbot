@@ -18,12 +18,20 @@ export default function LoginPage() {
     }
   }, [router, token]);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const submittedUser = String(form.get("username") ?? "").trim();
+    const submittedPassword = String(form.get("password") ?? "");
+    if (!submittedUser || !submittedPassword) {
+      setError("Username and password are required");
+      return;
+    }
+
     setError(null);
     setLoading(true);
     try {
-      await loginWithPassword(username.trim(), password);
+      await loginWithPassword(submittedUser, submittedPassword);
       router.replace("/login/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -50,10 +58,12 @@ export default function LoginPage() {
               </label>
               <input
                 id="username"
+                name="username"
                 type="text"
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                onInput={(e) => setUsername((e.target as HTMLInputElement).value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 required
                 suppressHydrationWarning
@@ -65,10 +75,12 @@ export default function LoginPage() {
               </label>
               <input
                 id="password"
+                name="password"
                 type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 required
                 suppressHydrationWarning
@@ -83,7 +95,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading || !username.trim() || !password}
+              disabled={loading}
               className="w-full bg-emerald-600 text-white py-3 rounded-lg font-medium text-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? (
