@@ -2,23 +2,21 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { hasLoginToken, loginWithPassword } from "@/lib/login-auth";
+import { loginWithPassword, useLoginToken } from "@/lib/login-auth";
 
 export default function LoginPage() {
   const router = useRouter();
+  const token = useLoginToken();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
-    if (hasLoginToken()) {
+    if (token) {
       router.replace("/login/chat");
-    } else {
-      setCheckingSession(false);
     }
-  }, [router]);
+  }, [router, token]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -31,14 +29,6 @@ export default function LoginPage() {
       setError(err instanceof Error ? err.message : "Login failed");
       setLoading(false);
     }
-  }
-
-  if (checkingSession) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-500">Checking session...</div>
-      </div>
-    );
   }
 
   return (
@@ -66,6 +56,7 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 required
+                suppressHydrationWarning
               />
             </div>
             <div>
@@ -80,6 +71,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 required
+                suppressHydrationWarning
               />
             </div>
 

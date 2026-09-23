@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getLoginToken, getLoginUser, hasLoginToken, logoutLogin } from "@/lib/login-auth";
+import { getLoginToken, logoutLogin, useLoginToken, useLoginUser } from "@/lib/login-auth";
 
 type Provider = { id: string; label: string; supports_files?: boolean; file_accept?: string };
 
@@ -127,8 +127,8 @@ export default function LoginChat() {
   const [loading, setLoading] = useState(false);
   const [providers, setProviders] = useState<Provider[]>(FALLBACK_PROVIDERS);
   const [provider, setProvider] = useState<string>(FALLBACK_PROVIDERS[0].id);
-  const [username, setUsername] = useState<string | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const token = useLoginToken();
+  const storedUser = useLoginUser();
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -138,14 +138,10 @@ export default function LoginChat() {
   const canSend = (!!input.trim() || !!pendingFile) && !loading;
 
   useEffect(() => {
-    if (!hasLoginToken()) {
+    if (!token) {
       router.replace("/login");
       return;
     }
-
-    const user = getLoginUser();
-    setUsername(user?.username ?? null);
-    setCheckingAuth(false);
 
     fetch("/api/login/providers")
       .then((res) => res.json())
@@ -158,7 +154,7 @@ export default function LoginChat() {
         }
       })
       .catch(() => {});
-  }, [router]);
+  }, [router, token]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -264,14 +260,6 @@ export default function LoginChat() {
     }
   }
 
-  if (checkingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-500">Verifying authentication...</div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
@@ -289,8 +277,8 @@ export default function LoginChat() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {username && (
-              <span className="text-xs text-gray-500 hidden sm:inline">{username}</span>
+            {storedUser?.username && (
+              <span className="text-xs text-gray-500 hidden sm:inline">{storedUser.username}</span>
             )}
             <ProviderSelect
               value={provider}
@@ -315,7 +303,7 @@ export default function LoginChat() {
               🔐
             </div>
             <div>
-              <p className="font-medium text-gray-600">Welcome{username ? `, ${username}` : ""}!</p>
+              <p className="font-medium text-gray-600">Welcome{storedUser?.username ? `, ${storedUser.username}` : ""}!</p>
               <p className="text-sm">You are signed in. How can Aria help you today?</p>
             </div>
           </div>

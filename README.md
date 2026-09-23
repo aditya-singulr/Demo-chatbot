@@ -36,11 +36,14 @@ cp python-chatbot/.env.example python-chatbot/.env
 | `BACKEND_PORT_AUTH` | No | `main_auth.py`, UI | Port for the Okta-authenticated backend (default `8003`) |
 | `BACKEND_PORT_LOGIN` | No | `main_login.py`, UI | Port for the username/password login backend (default `8004`) |
 | `UI_PORT_AUTH` | No | Okta UI | Port for `start-ui-auth.mjs` (default `3001`) |
+| `UI_PORT_LOGIN` | No | Login UI | Port for `start-ui-login.mjs` (default `3002`) |
 | `BACKEND_BIND_HOST` | No | Python backends | Host to bind on (default `0.0.0.0`) |
 | `BACKEND_HOST` | No | UI | Host used when building backend URLs (default `127.0.0.1`) |
 | `UI_BACKEND_TIMEOUT_MS` | No | UI | Timeout for UI → backend requests (default `15000`) |
 
-The UI derives backend URLs from `BACKEND_HOST` + the three `BACKEND_PORT_*` vars (e.g. `http://127.0.0.1:8001`). Optional full-URL overrides:
+Port variables are optional. If a port is not set in `.env`, the process uses the default in the table above. Set them only to avoid a collision or to run multiple instances. You still need `--env-file` for other config (API keys, etc.).
+
+The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` vars (e.g. `http://127.0.0.1:8001`). Optional full-URL overrides:
 
 | Variable | Description |
 |---|---|
