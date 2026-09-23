@@ -10,6 +10,8 @@ A fictional customer support chatbot for red teaming tests. The UI is a Next.js 
 | Backend — no guardrail | `python-chatbot/main.py` | `BACKEND_PORT_NO_GUARDRAIL` (8000) |
 | Backend — Singulr SDK guardrail | `python-chatbot/main_guardrail.py` | `BACKEND_PORT_GUARDRAIL` (8001) |
 | Backend — LiteLLM guardrail | `python-chatbot/main_guardrail_litellm.py` | `BACKEND_PORT_GUARDRAIL_LITELLM` (8002) |
+| Backend — Okta SSO | `python-chatbot/main_auth.py` | `BACKEND_PORT_AUTH` (8003) |
+| Backend — username/password login | `python-chatbot/main_login.py` | `BACKEND_PORT_LOGIN` (8004) |
 
 All processes read config from a **single env file** passed via `--env-file`. See `python-chatbot/.env.example`.
 
@@ -31,6 +33,9 @@ cp python-chatbot/.env.example python-chatbot/.env
 | `BACKEND_PORT_NO_GUARDRAIL` | No | `main.py`, UI | Port for the no-guardrail backend (default `8000`) |
 | `BACKEND_PORT_GUARDRAIL` | No | `main_guardrail.py`, UI | Port for the Singulr SDK backend (default `8001`) |
 | `BACKEND_PORT_GUARDRAIL_LITELLM` | No | `main_guardrail_litellm.py`, UI | Port for the LiteLLM backend (default `8002`) |
+| `BACKEND_PORT_AUTH` | No | `main_auth.py`, UI | Port for the Okta-authenticated backend (default `8003`) |
+| `BACKEND_PORT_LOGIN` | No | `main_login.py`, UI | Port for the username/password login backend (default `8004`) |
+| `UI_PORT_AUTH` | No | Okta UI | Port for `start-ui-auth.mjs` (default `3001`) |
 | `BACKEND_BIND_HOST` | No | Python backends | Host to bind on (default `0.0.0.0`) |
 | `BACKEND_HOST` | No | UI | Host used when building backend URLs (default `127.0.0.1`) |
 | `UI_BACKEND_TIMEOUT_MS` | No | UI | Timeout for UI → backend requests (default `15000`) |
@@ -42,6 +47,8 @@ The UI derives backend URLs from `BACKEND_HOST` + the three `BACKEND_PORT_*` var
 | `BACKEND_WITHOUT_GUARDRAIL` | Override URL for “Without Guardrail” mode |
 | `BACKEND_WITH_GUARDRAIL` | Override URL for “With Guardrail” SDK mode |
 | `BACKEND_WITH_GUARDRAIL_LITELLM` | Override URL for LiteLLM mode |
+| `BACKEND_WITH_AUTH` | Override URL for Okta SSO mode |
+| `BACKEND_WITH_LOGIN` | Override URL for username/password login mode |
 
 ### Singulr guardrail (required for guardrail backends)
 
@@ -81,7 +88,25 @@ The UI derives backend URLs from `BACKEND_HOST` + the three `BACKEND_PORT_*` var
 
 | Variable | Required | Description |
 |---|---|---|
-| `CHATBOT_API_KEY` | No | If set, `POST /api/chat` requires this token |
+| `CHATBOT_API_KEY` | No | If set, `POST /api/chat` on `main.py` requires this token |
+| `LOGIN_USERNAME` | No | Username for `main_login.py` (default `demo`) |
+| `LOGIN_PASSWORD` | No | Password for `main_login.py` (default `demo123`) |
+| `LOGIN_TOKEN` | No | Static token issued after login (default `novapay-static-token`) |
+
+### Okta SSO (`main_auth.py`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `OKTA_DOMAIN` | No | Okta org domain used by the Python backend to validate tokens (default `singulr.okta.com`) |
+| `OKTA_CLIENT_ID` | No | SPA client ID expected in JWT `aud` (default `0oa26y1wj6p5lppaj1d8`) |
+| `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default `http://localhost:3001,https://chat-demo-external.singulr.ai`) |
+
+The browser login in `lib/okta.ts` uses the same domain and client ID (currently hardcoded). The SPA app in Okta must allow:
+
+- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3001/auth/callback`)
+- Sign-out redirect: `{origin}/auth`
+- Grant type: Authorization Code with PKCE
+- Scopes: `openid`, `profile`, `email`
 
 ### Bedrock agents / RAG (optional providers)
 
@@ -114,7 +139,44 @@ pip install -r requirements.txt
 python main.py --env-file .env
 python main_guardrail.py --env-file .env
 python main_guardrail_litellm.py --env-file .env
+python main_auth.py --env-file .env
+python main_login.py --env-file .env
 ```
+
+### Okta SSO login UI
+
+Start the Okta-authenticated backend and a UI that redirects `/` to `/auth`:
+
+```bash
+python python-chatbot/main_auth.py --env-file python-chatbot/.env
+npm run dev:ui:auth
+```
+
+Open the URL shown in the terminal (port comes from `UI_PORT_AUTH`, default `3001`). The same pages also work on the standard UI at `/auth` if `main_auth.py` is running.
+
+**Login flow (Authorization Code + PKCE):**
+
+1. Open `/auth` and click **Sign in with Okta**.
+2. The browser stores a PKCE `code_verifier` + `state` in `sessionStorage`, then redirects to Okta (`/oauth2/v1/authorize`).
+3. After the user signs in, Okta redirects to `/auth/callback?code=…&state=…`.
+4. The callback page exchanges the code for tokens at Okta `/oauth2/v1/token` and stores them in `localStorage` (`okta_tokens`).
+5. The user is sent to `/auth/chat`. Every chat request goes to `POST /api/auth/ui` with `Authorization: Bearer <access_token>`.
+6. Next.js forwards that header to `main_auth.py`, which validates the access token with Okta `/oauth2/v1/userinfo` (JWT decode is a fallback). Invalid or missing tokens return `401` and the UI signs the user out.
+
+Sign out clears local tokens and redirects to Okta `/oauth2/v1/logout`, then back to `/auth`.
+
+### Username/password login UI
+
+Start the login backend and a UI that redirects `/` to `/login`:
+
+```bash
+python python-chatbot/main_login.py --env-file python-chatbot/.env
+npm run dev:ui:login
+```
+
+Open the URL shown in the terminal (port comes from `UI_PORT_LOGIN`, default `3002`). Sign in with `demo` / `demo123` (or the values in your env file). Chat requests send the returned token as `Authorization: Bearer …`; the backend rejects chat without it.
+
+The same login pages also work on the standard UI at `/login` if `main_login.py` is running.
 
 Each script reads its port from the matching `BACKEND_PORT_*` variable in the env file.
 
@@ -191,6 +253,14 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 | `POST /api/chat` | `api-key` or `Authorization: Bearer` header | Red teaming target endpoint |
 | `GET /api/providers` | None | SDK provider list for the UI dropdown |
 | `GET /health` | None | Backend health check (Python) |
+| `GET /auth` | None | Okta SSO login UI |
+| `GET /auth/callback` | None | Okta OAuth redirect (exchanges `code` for tokens) |
+| `GET /auth/chat` | Okta access token in `localStorage` | Authenticated Aria chat UI |
+| `POST /api/auth/ui` | `Authorization: Bearer` (Okta access token) | Okta-mode chat (proxies to `main_auth.py`) |
+| `GET /api/auth/providers` | None | Provider list from `main_auth.py` |
+| `GET /login` | None | Username/password login UI |
+| `POST /api/login` | None | Exchange username/password for a static token |
+| `POST /api/login/ui` | `Authorization: Bearer` | Login-mode chat (proxies to `main_login.py`) |
 
 ---
 
