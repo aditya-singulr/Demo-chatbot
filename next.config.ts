@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   // Do not set turbopack.root to this app dir — it breaks CSS @import resolution
   // (resolves from the parent, e.g. /home/ubuntu) when a parent lockfile exists.
   allowedDevOrigins: ["*.*", "*.*.*", "*.*.*.*", "*.*.*.*.*", "*.*.*.*.*.*"],
+  // Hide the on-screen N indicator; Next.js still surfaces build/runtime errors.
+  devIndicators: false,
   async headers() {
     return [
       {
