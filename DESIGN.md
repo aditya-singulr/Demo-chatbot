@@ -29,6 +29,7 @@ Aria is a customer support chatbot demo for "NovaPay", a fictional digital payme
 - Guardrail protection via Singulr SDK and LiteLLM proxy
 - Multimodal support (images and documents)
 - Real-time attack detection UI
+- Separate username/password + constant OTP demo with an HTTP-only chat session cookie
 
 **Primary Use Case**: Red teaming and security testing of AI guardrails.
 
@@ -99,6 +100,7 @@ Aria is a customer support chatbot demo for "NovaPay", a fictional digital payme
 | Backend (no guardrail) | FastAPI/Python | Direct LLM calls without protection |
 | Backend (Singulr SDK) | FastAPI/Python + Singulr SDK | LLM calls routed through Singulr guardrail |
 | Backend (LiteLLM) | FastAPI/Python + LiteLLM | LLM calls via LiteLLM proxy with guardrails |
+| Backend (OTP login) | FastAPI/Python | Static credential + OTP authentication and cookie-authenticated chat |
 
 ---
 
@@ -117,13 +119,19 @@ Aria is a customer support chatbot demo for "NovaPay", a fictional digital payme
 app/
 ├── layout.tsx          # Root layout with fonts and metadata
 ├── page.tsx            # Main chat interface (client component)
+├── otp-login/
+│   ├── page.tsx        # Username/password + OTP login UI
+│   └── chat/page.tsx   # Cookie-authenticated chat UI
 ├── globals.css         # Tailwind imports and CSS variables
 └── api/
     ├── ui/route.ts             # Chat message proxy
     ├── providers/route.ts      # SDK providers endpoint
-    └── litellm-providers/route.ts  # LiteLLM models endpoint
+    ├── litellm-providers/route.ts  # LiteLLM models endpoint
+    └── otp-login/               # OTP login and cookie-chat proxy routes
 lib/
-└── backends.ts         # Backend URL configuration
+├── backends.ts         # Backend URL configuration
+├── otp-login-auth.ts   # OTP login client helpers
+└── otp-login-proxy.ts  # OTP backend proxy and cookie forwarding
 ```
 
 ### State Management
@@ -189,6 +197,23 @@ The UI maps security categories to styled badges:
 | `system_probe` | System Probe | Purple |
 | `roleplay_attack` | Roleplay Attack | Pink |
 
+### OTP Login Frontend
+
+The separate `/otp-login` surface is intentionally independent from the existing
+`/login` flow:
+
+1. The user submits static username/password credentials.
+2. The UI displays a second form requesting a one-time password.
+3. Successful verification navigates to `/otp-login/chat?welcome=1`.
+4. The Next.js proxy forwards the backend `Set-Cookie` header to the browser.
+5. Chat, provider, and session-check requests are same-origin requests; the
+   browser sends the HTTP-only chat cookie automatically.
+6. The post-login cookie-consent dialog is visual-only. Its **Accept all
+   cookies** action only closes the dialog and does not manage consent state.
+
+The frontend does not store the authentication cookie in local storage. The
+backend session cookie is separate from the simulated consent dialog.
+
 ---
 
 ## Backend Design
@@ -219,6 +244,24 @@ app.add_middleware(CORSMiddleware, ...)
 @app.get("/api/providers")
 @app.get("/health")
 ```
+
+### OTP Cookie Backend
+
+`python-chatbot/main_otp_login.py` follows the same provider and model-call
+structure as `main_login.py`, with a two-step authentication flow:
+
+- `POST /api/login` validates the static username/password and returns an OTP
+  challenge state.
+- `POST /api/verify-otp` validates the constant demo OTP and sets an
+  HTTP-only, `SameSite=Lax` chat-session cookie.
+- `POST /api/ui`, `POST /api/chat`, `GET /api/me`, and `GET /api/auth/check`
+  use that cookie for authentication.
+- `POST /api/logout` clears the chat-session cookie.
+
+The cookie value is intentionally static for this demo and is configured with
+`OTP_CHAT_SESSION`, `OTP_CHAT_COOKIE_NAME`, and `OTP_CHAT_COOKIE_MAX_AGE`.
+The Next.js routes under `app/api/otp-login/` forward the cookie between the
+browser and the Python backend.
 
 ### System Prompt
 
@@ -293,6 +336,27 @@ class ApiChatRequest(BaseModel):
 6. Response bubbles back to frontend
    │  - Assistant message added to chat
    │  - Security info displayed if attack detected
+```
+
+### OTP Authentication and Cookie Chat Flow
+
+```
+1. User submits username/password at /otp-login
+   │
+2. Next.js POST /api/otp-login
+   │  └─ Python POST /api/login validates static credentials
+   │
+3. User submits the constant OTP
+   │
+4. Next.js POST /api/otp-login/verify
+   │  └─ Python POST /api/verify-otp returns Set-Cookie
+   │
+5. Next.js forwards Set-Cookie to the browser
+   │
+6. Browser POST /api/otp-login/ui
+   │  └─ Next.js forwards the Cookie header to Python /api/ui
+   │
+7. Python validates the cookie, then calls the selected provider
 ```
 
 ### Provider Selection Flow
@@ -509,6 +573,10 @@ def setup(module_name: str, *, default_env_file: str = ".env") -> None:
 | `BACKEND_PORT_NO_GUARDRAIL` | 8000 | main.py |
 | `BACKEND_PORT_GUARDRAIL` | 8001 | main_guardrail.py |
 | `BACKEND_PORT_GUARDRAIL_LITELLM` | 8002 | main_guardrail_litellm.py |
+| `BACKEND_PORT_LOGIN` | 8004 | main_login.py |
+| `BACKEND_PORT_OTP_LOGIN` | 8005 | main_otp_login.py |
+| `UI_PORT_LOGIN` | 3002 | Username/password login UI |
+| `UI_PORT_OTP_LOGIN` | 3003 | Username/password + OTP login UI |
 
 ### Backend URL Resolution (lib/backends.ts)
 
@@ -521,9 +589,27 @@ export function getBackendUrls() {
       `http://${BACKEND_HOST}:${BACKEND_PORT_GUARDRAIL}`,
     withGuardrailLitellm: process.env.BACKEND_WITH_GUARDRAIL_LITELLM ??
       `http://${BACKEND_HOST}:${BACKEND_PORT_GUARDRAIL_LITELLM}`,
+    withLogin: process.env.BACKEND_WITH_LOGIN ??
+      `http://${BACKEND_HOST}:${BACKEND_PORT_LOGIN}`,
+    withOtpLogin: process.env.BACKEND_WITH_OTP_LOGIN ??
+      `http://${BACKEND_HOST}:${BACKEND_PORT_OTP_LOGIN}`,
   };
 }
 ```
+
+### OTP Login Settings
+
+The OTP backend uses static demo values configured in the shared env file:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OTP_LOGIN_USERNAME` | `demo` | Static username |
+| `OTP_LOGIN_PASSWORD` | `demo123` | Static password |
+| `OTP_LOGIN_CODE` | `123456` | Constant OTP |
+| `OTP_CHAT_SESSION` | `novapay-otp-chat-session` | Static session value |
+| `OTP_CHAT_COOKIE_NAME` | `novapay_chat_session` | HTTP cookie name |
+| `OTP_CHAT_COOKIE_MAX_AGE` | `3600` | Session lifetime in seconds |
+| `OTP_CHAT_COOKIE_SECURE` | `false` | Enable for HTTPS deployments |
 
 ---
 
@@ -556,6 +642,22 @@ export function getBackendUrls() {
   }
 }
 ```
+
+### OTP Login API
+
+The OTP UI uses same-origin Next.js proxy routes:
+
+| Route | Auth | Purpose |
+|-------|------|---------|
+| `POST /api/otp-login` | None | Validate username/password and begin OTP flow |
+| `POST /api/otp-login/verify` | None | Validate the constant OTP and forward the session cookie |
+| `GET /api/otp-login/check` | Chat cookie | Check the current authenticated session |
+| `GET /api/otp-login/providers` | None | Fetch provider metadata |
+| `POST /api/otp-login/ui` | Chat cookie | Proxy browser chat requests |
+| `POST /api/otp-login/logout` | Optional chat cookie | Clear the session cookie |
+
+The Python backend equivalents are `/api/login`, `/api/verify-otp`,
+`/api/auth/check`, `/api/providers`, `/api/ui`, and `/api/logout`.
 
 ### POST /api/chat (Red Teaming Endpoint)
 
@@ -713,6 +815,10 @@ def call_my_provider(messages: list[dict], system: str) -> str:
 - `/api/chat` requires `CHATBOT_API_KEY` when set
 - Token checked via `api-key` header or `Authorization: Bearer` header
 - `/api/ui` has no authentication (browser-facing)
+- OTP-mode `/api/otp-login/ui` requires the `novapay_chat_session` HTTP-only
+  cookie; the Python OTP backend rejects requests without a valid cookie
+- The cookie-consent popup does not grant authentication and does not store
+  consent state
 
 ### CORS Configuration
 
@@ -749,15 +855,22 @@ def call_my_provider(messages: list[dict], system: str) -> str:
 | `app/api/ui/route.ts` | Chat message proxy |
 | `app/api/providers/route.ts` | SDK provider list proxy |
 | `app/api/litellm-providers/route.ts` | LiteLLM model list proxy |
+| `app/otp-login/page.tsx` | Username/password + OTP login UI |
+| `app/otp-login/chat/page.tsx` | OTP cookie-authenticated chat UI |
+| `app/api/otp-login/*` | OTP login, cookie, and chat proxy routes |
 | `lib/backends.ts` | Backend URL configuration |
+| `lib/otp-login-auth.ts` | OTP authentication client helpers |
+| `lib/otp-login-proxy.ts` | OTP backend proxy and cookie forwarding |
 | `python-chatbot/main.py` | No-guardrail backend |
 | `python-chatbot/main_guardrail.py` | Singulr SDK guardrail backend |
 | `python-chatbot/main_guardrail_litellm.py` | LiteLLM guardrail backend |
+| `python-chatbot/main_otp_login.py` | Username/password + OTP cookie backend |
 | `python-chatbot/providers.py` | SDK provider implementations |
 | `python-chatbot/litellm_utils.py` | LiteLLM provider implementation |
 | `python-chatbot/env_config.py` | Environment file loading |
 | `scripts/start-ui.mjs` | UI startup script |
+| `scripts/start-ui-otp-login.mjs` | OTP UI startup script |
 
 ---
 
-*Last updated: 2026-09-11*
+*Last updated: 2026-10-11*

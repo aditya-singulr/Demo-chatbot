@@ -21,6 +21,9 @@ export function getBackendUrls() {
     withLogin:
       process.env.BACKEND_WITH_LOGIN ??
       backendUrlFromPort("BACKEND_PORT_LOGIN", "8004"),
+    withOtpLogin:
+      process.env.BACKEND_WITH_OTP_LOGIN ??
+      backendUrlFromPort("BACKEND_PORT_OTP_LOGIN", "8005"),
   };
 }
 

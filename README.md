@@ -12,6 +12,7 @@ A fictional customer support chatbot for red teaming tests. The UI is a Next.js 
 | Backend — LiteLLM guardrail | `python-chatbot/main_guardrail_litellm.py` | `BACKEND_PORT_GUARDRAIL_LITELLM` (8002) |
 | Backend — Okta SSO | `python-chatbot/main_auth.py` | `BACKEND_PORT_AUTH` (8003) |
 | Backend — username/password login | `python-chatbot/main_login.py` | `BACKEND_PORT_LOGIN` (8004) |
+| Backend — username/password + constant OTP login | `python-chatbot/main_otp_login.py` | `BACKEND_PORT_OTP_LOGIN` (8005) |
 
 All processes read config from a **single env file** passed via `--env-file`. See `python-chatbot/.env.example`.
 
@@ -35,8 +36,10 @@ cp python-chatbot/.env.example python-chatbot/.env
 | `BACKEND_PORT_GUARDRAIL_LITELLM` | No | `main_guardrail_litellm.py`, UI | Port for the LiteLLM backend (default `8002`) |
 | `BACKEND_PORT_AUTH` | No | `main_auth.py`, UI | Port for the Okta-authenticated backend (default `8003`) |
 | `BACKEND_PORT_LOGIN` | No | `main_login.py`, UI | Port for the username/password login backend (default `8004`) |
+| `BACKEND_PORT_OTP_LOGIN` | No | `main_otp_login.py`, UI | Port for the username/password + OTP cookie backend (default `8005`) |
 | `UI_PORT_AUTH` | No | Okta UI | Port for `start-ui-auth.mjs` (default `3001`) |
 | `UI_PORT_LOGIN` | No | Login UI | Port for `start-ui-login.mjs` (default `3002`) |
+| `UI_PORT_OTP_LOGIN` | No | OTP login UI | Port for `start-ui-otp-login.mjs` (default `3003`) |
 | `BACKEND_BIND_HOST` | No | Python backends | Host to bind on (default `0.0.0.0`) |
 | `BACKEND_HOST` | No | UI | Host used when building backend URLs (default `127.0.0.1`) |
 | `UI_BACKEND_TIMEOUT_MS` | No | UI | Timeout for UI → backend requests (default `15000`) |
@@ -52,6 +55,7 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 | `BACKEND_WITH_GUARDRAIL_LITELLM` | Override URL for LiteLLM mode |
 | `BACKEND_WITH_AUTH` | Override URL for Okta SSO mode |
 | `BACKEND_WITH_LOGIN` | Override URL for username/password login mode |
+| `BACKEND_WITH_OTP_LOGIN` | Override URL for username/password + OTP cookie mode |
 
 ### Singulr guardrail (required for guardrail backends)
 
@@ -95,6 +99,13 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 | `LOGIN_USERNAME` | No | Username for `main_login.py` (default `demo`) |
 | `LOGIN_PASSWORD` | No | Password for `main_login.py` (default `demo123`) |
 | `LOGIN_TOKEN` | No | Static token issued after login (default `novapay-static-token`) |
+| `OTP_LOGIN_USERNAME` | No | Username for `main_otp_login.py` (default `demo`) |
+| `OTP_LOGIN_PASSWORD` | No | Password for `main_otp_login.py` (default `demo123`) |
+| `OTP_LOGIN_CODE` | No | Constant OTP for `main_otp_login.py` (default `123456`) |
+| `OTP_CHAT_SESSION` | No | Static HTTP-only chat session value (default `novapay-otp-chat-session`) |
+| `OTP_CHAT_COOKIE_NAME` | No | Name of the backend chat cookie (default `novapay_chat_session`) |
+| `OTP_CHAT_COOKIE_MAX_AGE` | No | Chat cookie lifetime in seconds (default `3600`) |
+| `OTP_CHAT_COOKIE_SECURE` | No | Set to `true` when the UI uses HTTPS (default `false`) |
 
 ### Okta SSO (`main_auth.py`)
 
@@ -144,6 +155,7 @@ python main_guardrail.py --env-file .env
 python main_guardrail_litellm.py --env-file .env
 python main_auth.py --env-file .env
 python main_login.py --env-file .env
+python main_otp_login.py --env-file .env
 ```
 
 ### Okta SSO login UI
@@ -182,6 +194,24 @@ Open the URL shown in the terminal (port comes from `UI_PORT_LOGIN`, default `30
 The same login pages also work on the standard UI at `/login` if `main_login.py` is running.
 
 Each script reads its port from the matching `BACKEND_PORT_*` variable in the env file.
+
+### Username/password + OTP cookie login UI
+
+Start the OTP backend and its separate UI:
+
+```bash
+python python-chatbot/main_otp_login.py --env-file python-chatbot/.env
+npm run dev:ui:otp-login
+```
+
+Open the URL shown in the terminal (port comes from `UI_PORT_OTP_LOGIN`, default `3003`) and visit
+`/otp-login` if using the standard UI server. The demo uses the configured static username and
+password, followed by the constant OTP in `OTP_LOGIN_CODE` (default `123456`).
+
+After successful OTP verification, the Python backend issues an HTTP-only chat session cookie.
+The Next.js proxy forwards that cookie to the browser and forwards it back to Python for chat
+requests. The cookie-consent dialog shown after login is only visual; its **Accept all cookies**
+button does not create or modify consent cookies.
 
 ### UI (individual)
 
@@ -264,6 +294,11 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 | `GET /login` | None | Username/password login UI |
 | `POST /api/login` | None | Exchange username/password for a static token |
 | `POST /api/login/ui` | `Authorization: Bearer` | Login-mode chat (proxies to `main_login.py`) |
+| `GET /otp-login` | None | Username/password + constant OTP login UI |
+| `POST /api/otp-login` | None | Validate OTP-mode username/password and begin OTP flow |
+| `POST /api/otp-login/verify` | None | Verify the constant OTP and set the HTTP-only chat cookie |
+| `POST /api/otp-login/ui` | `novapay_chat_session` cookie | OTP-mode chat (proxies to `main_otp_login.py`) |
+| `POST /api/otp-login/logout` | Optional cookie | Clear the OTP-mode chat cookie |
 
 ---
 
