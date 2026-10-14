@@ -111,11 +111,11 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 
 | Variable | Required | Description |
 |---|---|---|
-| `OKTA_DOMAIN` | No | Okta org domain used by the Python backend to validate tokens (default `singulr.okta.com`) |
-| `OKTA_CLIENT_ID` | No | SPA client ID expected in JWT `aud` (default `0oa26y1wj6p5lppaj1d8`) |
+| `OKTA_DOMAIN` | Yes* | Okta org domain. `start-ui.mjs` / `start-ui-auth.mjs` refuse to start without this or `NEXT_PUBLIC_OKTA_DOMAIN` |
+| `OKTA_CLIENT_ID` | Yes* | SPA client ID expected in JWT `aud`. Required to start those UIs (or set `NEXT_PUBLIC_OKTA_CLIENT_ID`) |
 | `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default `http://localhost:3001,https://chat-demo-external.singulr.ai`) |
 
-The browser login in `lib/okta.ts` uses the same domain and client ID (currently hardcoded). The SPA app in Okta must allow:
+\*Required to start `scripts/start-ui.mjs` and `scripts/start-ui-auth.mjs`. The scripts copy these onto `NEXT_PUBLIC_OKTA_DOMAIN` / `NEXT_PUBLIC_OKTA_CLIENT_ID` for the browser login in `lib/okta.ts`. The SPA app in Okta must allow:
 
 - Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3000/auth/callback` for the standard UI, `http://localhost:3001/auth/callback` for the dedicated Okta UI)
 - Sign-out redirect: `{origin}/auth`

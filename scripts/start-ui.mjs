@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { requireOktaEnv } from "./require-okta-env.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const chatbotDir = join(root, "python-chatbot");
@@ -62,23 +63,15 @@ if (!values["env-file"]) {
 }
 
 const envPath = loadEnvFile(values["env-file"]);
+const okta = requireOktaEnv();
 const uiPort = process.env.UI_PORT ?? "3000";
 const nextCmd = values.prod ? "start" : "dev";
 
-const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN || process.env.OKTA_DOMAIN;
-if (!oktaDomain) {
-  console.warn("\n⚠️  Warning: OKTA_DOMAIN / NEXT_PUBLIC_OKTA_DOMAIN not set. Okta authentication will not work.\n");
-}
-if (process.env.OKTA_DOMAIN && !process.env.NEXT_PUBLIC_OKTA_DOMAIN) {
-  process.env.NEXT_PUBLIC_OKTA_DOMAIN = process.env.OKTA_DOMAIN;
-}
 process.env.NEXT_PUBLIC_AUTH_MODE = "okta-ui";
 
 console.log(`Loading env from ${envPath}`);
 console.log(`Starting Next.js on port ${uiPort} (${nextCmd})`);
-if (oktaDomain) {
-  console.log(`Okta domain: ${oktaDomain}`);
-}
+console.log(`Okta domain: ${okta.domain}`);
 
 const child = spawn("npx", ["next", nextCmd, "-p", uiPort], {
   cwd: root,

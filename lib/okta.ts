@@ -4,8 +4,8 @@
  * Implements Authorization Code flow with PKCE for Single-Page Applications.
  */
 
-export const OKTA_DOMAIN = "singulr.okta.com";
-export const OKTA_CLIENT_ID = "0oa26y1wj6p5lppaj1d8";
+export const OKTA_DOMAIN = process.env.NEXT_PUBLIC_OKTA_DOMAIN ?? "";
+export const OKTA_CLIENT_ID = process.env.NEXT_PUBLIC_OKTA_CLIENT_ID ?? "";
 export const OKTA_REDIRECT_URI = typeof window !== "undefined"
   ? `${window.location.origin}/auth/callback`
   : "https://chat-demo-external.singulr.ai/auth/callback";
