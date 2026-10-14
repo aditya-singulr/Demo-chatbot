@@ -1,14 +1,50 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import {
+  getSessionAccessToken,
+  OKTA_SESSION_COOKIE,
+  validateOktaAccessToken,
+} from "@/lib/okta-session";
 
 /**
  * Middleware to handle auth redirects.
  *
- * Only active when NEXT_PUBLIC_AUTH_MODE is set (okta, login, or otp-login).
- * For the standard UI (start-ui.mjs), this middleware does nothing.
+ * The standard UI uses a server-validated Okta session. The other auth modes
+ * retain their existing root redirect behavior.
  */
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const authMode = process.env.NEXT_PUBLIC_AUTH_MODE;
+
+  if (authMode === "okta-standard") {
+    const { pathname } = request.nextUrl;
+    const isPublicPath =
+      pathname === "/auth" ||
+      pathname === "/auth/callback" ||
+      pathname === "/api/auth/session";
+
+    if (isPublicPath) {
+      return NextResponse.next();
+    }
+
+    const accessToken = getSessionAccessToken(request);
+    if (accessToken && (await validateOktaAccessToken(accessToken))) {
+      return NextResponse.next();
+    }
+
+    if (pathname.startsWith("/api/")) {
+      const response = NextResponse.json(
+        { error: "Authentication required", code: "AUTH_REQUIRED" },
+        { status: 401 },
+      );
+      response.cookies.delete(OKTA_SESSION_COOKIE);
+      return response;
+    }
+
+    const response = NextResponse.redirect(new URL("/auth", request.url));
+    response.cookies.delete(OKTA_SESSION_COOKIE);
+    return response;
+  }
+
   if (authMode !== "okta" && authMode !== "login" && authMode !== "otp-login") {
     return NextResponse.next();
   }
@@ -25,5 +61,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/"],
+  matcher: ["/((?!_next/|favicon.ico).*)"],
 };

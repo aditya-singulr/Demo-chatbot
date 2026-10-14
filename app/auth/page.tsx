@@ -10,11 +10,22 @@ export default function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
-    // Check if already authenticated
+    const standardMode = process.env.NEXT_PUBLIC_AUTH_MODE === "okta-standard";
+
+    if (standardMode) {
+      fetch("/api/auth/session", { credentials: "same-origin" })
+        .then((response) => {
+          if (response.ok) router.replace("/");
+          else setCheckingSession(false);
+        })
+        .catch(() => setCheckingSession(false));
+      return;
+    }
+
     if (hasValidTokens()) {
       router.replace("/auth/chat");
     } else {
-      setCheckingSession(false);
+      queueMicrotask(() => setCheckingSession(false));
     }
   }, [router]);
 
@@ -72,11 +83,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="text-xs text-gray-400 text-center mt-4">
-          <a href="/" className="hover:text-gray-600 underline">
-            Use without authentication
-          </a>
-        </p>
       </div>
     </div>
   );

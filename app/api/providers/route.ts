@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getProvidersBackendUrl } from "@/lib/backends";
+import { getSessionAuthorization } from "@/lib/okta-session";
 
 // Fallback list so the dropdown still renders if the backend is unreachable.
 const FALLBACK = [
@@ -18,13 +19,28 @@ const FALLBACK = [
   { id: "bedrock_retrieve_and_generate", label: "Bedrock Agent · Retrieve & Generate (KB RAG)", supports_files: false },
 ];
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const backend = getProvidersBackendUrl();
+  const sessionAuthorization = getSessionAuthorization(request);
+
+  if (!sessionAuthorization) {
+    return NextResponse.json(
+      { error: "Authentication required", code: "AUTH_REQUIRED" },
+      { status: 401 },
+    );
+  }
 
   try {
     const res = await fetch(`${backend}/api/providers`, {
+      headers: { Authorization: sessionAuthorization },
       cache: "no-store",
     });
+    if (res.status === 401) {
+      return NextResponse.json(
+        { error: "Authentication required", code: "AUTH_REQUIRED" },
+        { status: 401 },
+      );
+    }
     if (!res.ok) throw new Error(`backend ${res.status}`);
     return NextResponse.json(await res.json());
   } catch {

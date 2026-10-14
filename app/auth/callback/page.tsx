@@ -16,17 +16,33 @@ function CallbackHandler() {
     const errorDescription = searchParams.get("error_description");
 
     if (errorParam) {
-      setError(errorDescription || errorParam);
+      queueMicrotask(() => setError(errorDescription || errorParam));
       return;
     }
 
     if (!code || !state) {
-      setError("Missing authorization code or state");
+      queueMicrotask(() => setError("Missing authorization code or state"));
       return;
     }
 
     handleCallback(code, state)
-      .then(() => {
+      .then(async (tokens) => {
+        if (process.env.NEXT_PUBLIC_AUTH_MODE === "okta-standard") {
+          const sessionResponse = await fetch("/api/auth/session", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tokens.access_token}`,
+            },
+          });
+
+          if (!sessionResponse.ok) {
+            throw new Error("Unable to establish the authenticated session");
+          }
+
+          router.replace("/");
+          return;
+        }
+
         console.log("OAuth callback successful, redirecting to chat");
         router.replace("/auth/chat");
       })

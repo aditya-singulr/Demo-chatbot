@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrls } from "@/lib/backends";
+import { getSessionAuthorization } from "@/lib/okta-session";
 
 export async function POST(req: NextRequest) {
   const { withoutGuardrail, withGuardrail, withGuardrailLitellm } = getBackendUrls();
+  const sessionAuthorization = getSessionAuthorization(req);
+
+  if (!sessionAuthorization) {
+    return NextResponse.json(
+      { error: "Authentication required", code: "AUTH_REQUIRED" },
+      { status: 401 },
+    );
+  }
 
   try {
     const { messages, mode, provider } = await req.json();
@@ -31,14 +40,8 @@ export async function POST(req: NextRequest) {
         ? withGuardrail
         : withoutGuardrail;
 
-    // forward selective incoming headers (Authorization, cookies, and any x- headers)
-    const incomingHeaders = Object.fromEntries(req.headers as any) as Record<string, string>;
     const forwardHeaders: Record<string, string> = { "Content-Type": "application/json" };
-    if (incomingHeaders.authorization) forwardHeaders.Authorization = incomingHeaders.authorization;
-    if (incomingHeaders.cookie) forwardHeaders.Cookie = incomingHeaders.cookie;
-    for (const [k, v] of Object.entries(incomingHeaders)) {
-      if (k.startsWith("x-")) forwardHeaders[k] = v;
-    }
+    forwardHeaders.Authorization = sessionAuthorization;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -52,6 +55,12 @@ export async function POST(req: NextRequest) {
 
     if (!pyRes.ok) {
       const body = await pyRes.text().catch(() => "");
+      if (pyRes.status === 401) {
+        return NextResponse.json(
+          { error: "Authentication required", code: "AUTH_REQUIRED" },
+          { status: 401 },
+        );
+      }
       console.error("Python backend error", {
         backendUrl,
         status: pyRes.status,
@@ -72,7 +81,7 @@ export async function POST(req: NextRequest) {
     let data: unknown;
     try {
       data = await pyRes.json();
-    } catch (err) {
+    } catch {
       const text = await pyRes.text().catch(() => "");
       console.error("Python backend returned invalid JSON", { backendUrl, status: pyRes.status, text });
       return NextResponse.json({ error: "Invalid response from backend" }, { status: 502 });
