@@ -10,11 +10,10 @@ export default function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
-    // Check if already authenticated
     if (hasValidTokens()) {
       router.replace("/auth/chat");
     } else {
-      setCheckingSession(false);
+      queueMicrotask(() => setCheckingSession(false));
     }
   }, [router]);
 
@@ -72,11 +71,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="text-xs text-gray-400 text-center mt-4">
-          <a href="/" className="hover:text-gray-600 underline">
-            Use without authentication
-          </a>
-        </p>
       </div>
     </div>
   );

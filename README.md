@@ -6,7 +6,7 @@ A fictional customer support chatbot for red teaming tests. The UI is a Next.js 
 
 | Component | Entrypoint | Default port env var |
 |---|---|---|
-| UI | `scripts/start-ui.mjs` | `UI_PORT` (3000) |
+| UI (Okta-protected) | `scripts/start-ui.mjs` | `UI_PORT` (3000) |
 | Backend — no guardrail | `python-chatbot/main.py` | `BACKEND_PORT_NO_GUARDRAIL` (8000) |
 | Backend — Singulr SDK guardrail | `python-chatbot/main_guardrail.py` | `BACKEND_PORT_GUARDRAIL` (8001) |
 | Backend — LiteLLM guardrail | `python-chatbot/main_guardrail_litellm.py` | `BACKEND_PORT_GUARDRAIL_LITELLM` (8002) |
@@ -95,7 +95,7 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 
 | Variable | Required | Description |
 |---|---|---|
-| `CHATBOT_API_KEY` | No | If set, `POST /api/chat` on `main.py` requires this token |
+| `CHATBOT_API_KEY` | No | Legacy setting; standard `/api/*` endpoints require an Okta access token |
 | `LOGIN_USERNAME` | No | Username for `main_login.py` (default `demo`) |
 | `LOGIN_PASSWORD` | No | Password for `main_login.py` (default `demo123`) |
 | `LOGIN_TOKEN` | No | Static token issued after login (default `novapay-static-token`) |
@@ -107,7 +107,7 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 | `OTP_CHAT_COOKIE_MAX_AGE` | No | Chat cookie lifetime in seconds (default `3600`) |
 | `OTP_CHAT_COOKIE_SECURE` | No | Set to `true` when the UI uses HTTPS (default `false`) |
 
-### Okta SSO (`main_auth.py`)
+### Okta SSO (standard UI and authenticated backends)
 
 | Variable | Required | Description |
 |---|---|---|
@@ -115,10 +115,11 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 | `OKTA_CLIENT_ID` | No | SPA client ID expected in JWT `aud` (default `0oa26y1wj6p5lppaj1d8`) |
 | `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default `http://localhost:3001,https://chat-demo-external.singulr.ai`) |
 
-The browser login in `lib/okta.ts` uses the same domain and client ID (currently hardcoded). The SPA app in Okta must allow:
+The standard UI uses [`lib/okta-standard.ts`](/Users/aditya/Cursor/Demo-chatbot/lib/okta-standard.ts)
+and fixed redirect URLs. The SPA app in Okta must allow:
 
-- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3001/auth/callback`)
-- Sign-out redirect: `{origin}/auth`
+- Sign-in redirect: `https://chat-demo.singulr.ai/auth/callback` and `http://localhost:3000/auth/callback`
+- Sign-out redirect: `https://chat-demo.singulr.ai/auth` and `http://localhost:3000/auth`
 - Grant type: Authorization Code with PKCE
 - Scopes: `openid`, `profile`, `email`
 
@@ -158,27 +159,41 @@ python main_login.py --env-file .env
 python main_otp_login.py --env-file .env
 ```
 
-### Okta SSO login UI
+### Standard UI with Okta SSO
 
-Start the Okta-authenticated backend and a UI that redirects `/` to `/auth`:
+The standard UI starts all three selectable backends and requires Okta authentication
+before rendering the chat UI or calling any UI/API route:
 
 ```bash
-python python-chatbot/main_auth.py --env-file python-chatbot/.env
-npm run dev:ui:auth
+./dev.sh
 ```
 
-Open the URL shown in the terminal (port comes from `UI_PORT_AUTH`, default `3001`). The same pages also work on the standard UI at `/auth` if `main_auth.py` is running.
+Open the URL shown in the terminal (port comes from `UI_PORT`, default `3000`).
+The Python `/api/ui`, `/api/chat`, and `/api/providers` endpoints for all three
+standard backends also require a valid Okta Bearer token.
 
 **Login flow (Authorization Code + PKCE):**
 
 1. Open `/auth` and click **Sign in with Okta**.
 2. The browser stores a PKCE `code_verifier` + `state` in `sessionStorage`, then redirects to Okta (`/oauth2/v1/authorize`).
 3. After the user signs in, Okta redirects to `/auth/callback?code=…&state=…`.
-4. The callback page exchanges the code for tokens at Okta `/oauth2/v1/token` and stores them in `localStorage` (`okta_tokens`).
-5. The user is sent to `/auth/chat`. Every chat request goes to `POST /api/auth/ui` with `Authorization: Bearer <access_token>`.
-6. Next.js forwards that header to `main_auth.py`, which validates the access token with Okta `/oauth2/v1/userinfo` (JWT decode is a fallback). Invalid or missing tokens return `401` and the UI signs the user out.
+4. The dedicated callback page exchanges the code for tokens at Okta `/oauth2/v1/token`, validates the access token with Okta, and sets an HttpOnly session cookie.
+5. Middleware rejects unauthenticated page requests with a redirect to `/auth` and rejects unauthenticated API requests with `401`.
+6. Next.js reads the server-side session, forwards the bearer token to the selected Python backend, and signs the user out if Okta rejects it.
 
-Sign out clears local tokens and redirects to Okta `/oauth2/v1/logout`, then back to `/auth`.
+Sign out clears the server session and local tokens, then redirects to Okta
+`/oauth2/v1/logout` and back to `/auth`.
+
+### Dedicated Okta backend UI
+
+For the separate `main_auth.py` backend and its single-provider UI:
+
+```bash
+python python-chatbot/main_auth.py --env-file python-chatbot/.env
+npm run dev:ui:auth
+```
+
+Open the URL shown in the terminal (port comes from `UI_PORT_AUTH`, default `3001`).
 
 ### Username/password login UI
 
@@ -220,7 +235,7 @@ From the project root:
 ```bash
 npm install
 
-# Development
+# Development (Okta authentication required)
 node scripts/start-ui.mjs --env-file python-chatbot/.env
 
 # Or via npm script (uses python-chatbot/.env by default)
@@ -281,10 +296,13 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 
 | Endpoint | Auth | Description |
 |---|---|---|
-| `GET /` | None | Aria chat UI |
-| `POST /api/ui` | None | Used by the browser UI (proxies to Python backend) |
-| `POST /api/chat` | `api-key` or `Authorization: Bearer` header | Red teaming target endpoint |
-| `GET /api/providers` | None | SDK provider list for the UI dropdown |
+| `GET /` | Okta session | Aria chat UI |
+| `POST /api/standard-auth/session` | Okta Bearer during login | Establishes the HttpOnly UI session |
+| `GET /api/standard-auth/session` | Okta session | Validates the current UI session |
+| `DELETE /api/standard-auth/session` | Optional session | Clears the UI session |
+| `POST /api/ui` | Okta session | Used by the browser UI (proxies to Python backend) |
+| `POST /api/chat` | Okta Bearer token | Red teaming target endpoint |
+| `GET /api/providers` | Okta session | SDK provider list for the UI dropdown |
 | `GET /health` | None | Backend health check (Python) |
 | `GET /auth` | None | Okta SSO login UI |
 | `GET /auth/callback` | None | Okta OAuth redirect (exchanges `code` for tokens) |
@@ -317,7 +335,7 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 
 ```
 POST {url} HTTP/1.1
-api-key: {api_key}
+Authorization: Bearer {okta_access_token}
 Content-Type: application/json
 
 {

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { logoutStandard } from "@/lib/okta-standard";
 
 type Provider = { id: string; label: string; supports_files?: boolean; file_accept?: string };
 
@@ -95,6 +97,11 @@ type Message = {
 
 type Mode = "no_guardrail" | "guardrail";
 
+type AuthenticatedUser = {
+  email?: string;
+  name?: string;
+};
+
 const FALLBACK_PROVIDERS: Provider[] = [
   { id: "bedrock_converse", label: "Bedrock · Converse (boto3)", supports_files: true, file_accept: ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md,.csv,.html,.doc,.docx,.xls,.xlsx,image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,text/html" },
   { id: "bedrock_invoke_model", label: "Bedrock · InvokeModel (boto3)", supports_files: true, file_accept: ".png,.jpg,.jpeg,.gif,.webp,.pdf,image/png,image/jpeg,image/gif,image/webp,application/pdf" },
@@ -160,6 +167,7 @@ function readFileAsAttachment(file: File): Promise<Attachment> {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("no_guardrail");
   const [useLitellm, setUseLitellm] = useState(false);
   const [chats, setChats] = useState<Record<Mode, Message[]>>({ no_guardrail: [], guardrail: [] });
@@ -172,6 +180,8 @@ export default function Home() {
   const [provider, setProvider] = useState<string>(FALLBACK_PROVIDERS[0].id);
   const [litellmProviders, setLitellmProviders] = useState<Provider[]>(FALLBACK_LITELLM_PROVIDERS);
   const [litellmProvider, setLitellmProvider] = useState<string>(FALLBACK_LITELLM_PROVIDERS[0].id);
+  const [user, setUser] = useState<AuthenticatedUser | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -202,34 +212,62 @@ export default function Home() {
   }
 
   useEffect(() => {
-    fetch("/api/providers")
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data.providers) && data.providers.length) {
-          setProviders(data.providers);
-          setProvider(prev =>
-            data.providers.some((p: Provider) => p.id === prev)
-              ? prev
-              : data.providers[0].id
-          );
-        }
-      })
-      .catch(() => {/* keep fallback list */});
+    let active = true;
 
-    fetch("/api/litellm-providers")
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data.providers) && data.providers.length) {
-          setLitellmProviders(data.providers);
-          setLitellmProvider(prev =>
-            data.providers.some((p: Provider) => p.id === prev)
-              ? prev
-              : data.providers[0].id
-          );
-        }
-      })
-      .catch(() => {/* keep fallback list */});
-  }, []);
+    async function initialize() {
+      const sessionResponse = await fetch("/api/standard-auth/session", {
+        credentials: "same-origin",
+      });
+      if (!sessionResponse.ok) {
+        if (active) router.replace("/auth");
+        return;
+      }
+
+      const session = await sessionResponse.json();
+      if (!active) return;
+      setUser(session.user ?? null);
+
+      const [providersResponse, litellmResponse] = await Promise.all([
+        fetch("/api/providers", { credentials: "same-origin" }),
+        fetch("/api/litellm-providers", { credentials: "same-origin" }),
+      ]);
+
+      if (providersResponse.status === 401 || litellmResponse.status === 401) {
+        await logoutStandard();
+        return;
+      }
+
+      const providersData = await providersResponse.json();
+      if (Array.isArray(providersData.providers) && providersData.providers.length) {
+        setProviders(providersData.providers);
+        setProvider((prev) =>
+          providersData.providers.some((p: Provider) => p.id === prev)
+            ? prev
+            : providersData.providers[0].id
+        );
+      }
+
+      const litellmData = await litellmResponse.json();
+      if (Array.isArray(litellmData.providers) && litellmData.providers.length) {
+        setLitellmProviders(litellmData.providers);
+        setLitellmProvider((prev) =>
+          litellmData.providers.some((p: Provider) => p.id === prev)
+            ? prev
+            : litellmData.providers[0].id
+        );
+      }
+
+      if (active) setCheckingAuth(false);
+    }
+
+    initialize().catch(() => {
+      if (active) router.replace("/auth");
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
@@ -319,6 +357,10 @@ export default function Home() {
           provider: isLitellm ? litellmProvider : provider,
         }),
       });
+      if (res.status === 401) {
+        await logoutStandard();
+        return;
+      }
       const data = await res.json();
 
       if (!res.ok) {
@@ -346,6 +388,14 @@ export default function Home() {
 
   const isGuardrail = mode === "guardrail";
 
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-gray-500">Verifying authentication...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
@@ -363,6 +413,11 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {user && (
+              <span className="text-xs text-gray-500 hidden sm:inline">
+                {user.email || user.name}
+              </span>
+            )}
             {totalAttacks > 0 && (
               <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-full px-3 py-1">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
@@ -403,6 +458,13 @@ export default function Home() {
                 title={isLitellm ? "Model routed through the LiteLLM proxy" : "Underlying SDK technique used to call the model"}
               />
             </div>
+            <button
+              type="button"
+              onClick={() => void logoutStandard()}
+              className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+            >
+              Sign out
+            </button>
           </div>
         </div>
 

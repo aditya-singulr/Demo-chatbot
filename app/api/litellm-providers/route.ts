@@ -1,15 +1,31 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrls } from "@/lib/backends";
+import { getStandardSessionAuthorization } from "@/lib/okta-standard-session";
 
 const FALLBACK = [{ id: "gpt-4o", label: "gpt-4o" }];
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const { withGuardrailLitellm } = getBackendUrls();
+  const sessionAuthorization = getStandardSessionAuthorization(request);
+
+  if (!sessionAuthorization) {
+    return NextResponse.json(
+      { error: "Authentication required", code: "AUTH_REQUIRED" },
+      { status: 401 },
+    );
+  }
 
   try {
     const res = await fetch(`${withGuardrailLitellm}/api/providers`, {
+      headers: { Authorization: sessionAuthorization },
       cache: "no-store",
     });
+    if (res.status === 401) {
+      return NextResponse.json(
+        { error: "Authentication required", code: "AUTH_REQUIRED" },
+        { status: 401 },
+      );
+    }
     if (!res.ok) throw new Error(`backend ${res.status}`);
     return NextResponse.json(await res.json());
   } catch {
