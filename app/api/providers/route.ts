@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getProvidersBackendUrl } from "@/lib/backends";
+import { requireOktaBearer, unauthorized } from "@/lib/okta-api";
 
 // Fallback list so the dropdown still renders if the backend is unreachable.
 const FALLBACK = [
@@ -18,13 +19,18 @@ const FALLBACK = [
   { id: "bedrock_retrieve_and_generate", label: "Bedrock Agent · Retrieve & Generate (KB RAG)", supports_files: false },
 ];
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authHeader = requireOktaBearer(req);
+  if (authHeader instanceof NextResponse) return authHeader;
+
   const backend = getProvidersBackendUrl();
 
   try {
     const res = await fetch(`${backend}/api/providers`, {
       cache: "no-store",
+      headers: { Authorization: authHeader },
     });
+    if (res.status === 401) return unauthorized();
     if (!res.ok) throw new Error(`backend ${res.status}`);
     return NextResponse.json(await res.json());
   } catch {

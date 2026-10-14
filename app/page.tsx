@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { logout, hasValidTokens, getAccessToken, getUserFromToken } from "@/lib/okta";
 
 type Provider = { id: string; label: string; supports_files?: boolean; file_accept?: string };
 
@@ -160,6 +162,9 @@ function readFileAsAttachment(file: File): Promise<Attachment> {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [user, setUser] = useState<{ email?: string; name?: string } | null>(null);
   const [mode, setMode] = useState<Mode>("no_guardrail");
   const [useLitellm, setUseLitellm] = useState(false);
   const [chats, setChats] = useState<Record<Mode, Message[]>>({ no_guardrail: [], guardrail: [] });
@@ -202,10 +207,34 @@ export default function Home() {
   }
 
   useEffect(() => {
-    fetch("/api/providers")
-      .then(res => res.json())
+    if (!hasValidTokens()) {
+      router.replace("/auth");
+      return;
+    }
+
+    const userInfo = getUserFromToken();
+    if (userInfo) {
+      setUser({ email: userInfo.email, name: userInfo.name });
+    }
+    setCheckingAuth(false);
+
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      logout();
+      return;
+    }
+    const authHeaders = { Authorization: `Bearer ${accessToken}` };
+
+    fetch("/api/providers", { headers: authHeaders })
+      .then(res => {
+        if (res.status === 401) {
+          logout();
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
-        if (Array.isArray(data.providers) && data.providers.length) {
+        if (data && Array.isArray(data.providers) && data.providers.length) {
           setProviders(data.providers);
           setProvider(prev =>
             data.providers.some((p: Provider) => p.id === prev)
@@ -216,10 +245,16 @@ export default function Home() {
       })
       .catch(() => {/* keep fallback list */});
 
-    fetch("/api/litellm-providers")
-      .then(res => res.json())
+    fetch("/api/litellm-providers", { headers: authHeaders })
+      .then(res => {
+        if (res.status === 401) {
+          logout();
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
-        if (Array.isArray(data.providers) && data.providers.length) {
+        if (data && Array.isArray(data.providers) && data.providers.length) {
           setLitellmProviders(data.providers);
           setLitellmProvider(prev =>
             data.providers.some((p: Provider) => p.id === prev)
@@ -229,7 +264,7 @@ export default function Home() {
         }
       })
       .catch(() => {/* keep fallback list */});
-  }, []);
+  }, [router]);
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
@@ -286,6 +321,12 @@ export default function Home() {
     const text = input.trim();
     if ((!text && !pendingFile) || loading) return;
 
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      logout();
+      return;
+    }
+
     const attachments = pendingFile ? [pendingFile] : undefined;
     const userMessage: Message = {
       role: "user",
@@ -302,7 +343,10 @@ export default function Home() {
     try {
       const res = await fetch("/api/ui", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           messages: newMessages
             .filter(
@@ -319,6 +363,11 @@ export default function Home() {
           provider: isLitellm ? litellmProvider : provider,
         }),
       });
+      if (res.status === 401) {
+        logout();
+        return;
+      }
+
       const data = await res.json();
 
       if (!res.ok) {
@@ -345,6 +394,14 @@ export default function Home() {
   }
 
   const isGuardrail = mode === "guardrail";
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-gray-500">Verifying authentication...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -403,6 +460,16 @@ export default function Home() {
                 title={isLitellm ? "Model routed through the LiteLLM proxy" : "Underlying SDK technique used to call the model"}
               />
             </div>
+            {user && (
+              <span className="text-xs text-gray-500 hidden sm:inline">{user.email || user.name}</span>
+            )}
+            <button
+              type="button"
+              onClick={() => logout()}
+              className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100"
+            >
+              Sign out
+            </button>
           </div>
         </div>
 

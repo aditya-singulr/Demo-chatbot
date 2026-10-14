@@ -4,8 +4,9 @@ import type { NextRequest } from "next/server";
 /**
  * Middleware to handle auth redirects.
  *
- * Only active when NEXT_PUBLIC_AUTH_MODE is set (okta, login, or otp-login).
- * For the standard UI (start-ui.mjs), this middleware does nothing.
+ * Active when NEXT_PUBLIC_AUTH_MODE is okta, login, or otp-login.
+ * start-ui.mjs uses okta-ui: chat stays at `/` and the page redirects to /auth
+ * if tokens are missing (tokens live in localStorage, so middleware cannot see them).
  */
 export function middleware(request: NextRequest) {
   const authMode = process.env.NEXT_PUBLIC_AUTH_MODE;
