@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   loginWithOtpCredentials,
@@ -170,11 +169,6 @@ export default function OtpLoginPage() {
           )}
         </div>
 
-        <p className="text-xs text-gray-400 text-center mt-4">
-          <Link href="/" className="hover:text-gray-600 underline">
-            Use without authentication
-          </Link>
-        </p>
       </div>
     </div>
   );

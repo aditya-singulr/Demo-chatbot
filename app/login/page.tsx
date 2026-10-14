@@ -117,11 +117,6 @@ export default function LoginPage() {
           </p> */}
         </div>
 
-        <p className="text-xs text-gray-400 text-center mt-4">
-          <a href="/" className="hover:text-gray-600 underline">
-            Use without authentication
-          </a>
-        </p>
       </div>
     </div>
   );

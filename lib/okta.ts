@@ -14,7 +14,7 @@ export const OKTA_LOGOUT_REDIRECT_URI = typeof window !== "undefined"
   : "https://chat-demo-external.singulr.ai/auth";
 
 export function getPostLoginPath(): string {
-  return process.env.NEXT_PUBLIC_AUTH_MODE === "okta" ? "/auth/chat" : "/";
+  return process.env.NEXT_PUBLIC_AUTH_MODE === "okta" ? "/auth/chat" : "/chat";
 }
 
 const TOKEN_STORAGE_KEY = "okta_tokens";

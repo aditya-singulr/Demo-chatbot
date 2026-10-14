@@ -140,7 +140,7 @@ Starts all three Python backends and the UI using `python-chatbot/.env`:
 ./dev.sh
 ```
 
-Open the URL shown in the terminal (port comes from `UI_PORT` in your env file). You are sent to `/auth` to **Sign in with Okta**; after login you land on the guardrail chat at `/`. Chat and provider requests send `Authorization: Bearer <access_token>`. Python backends (`main.py`, `main_guardrail.py`, `main_guardrail_litellm.py`) reject missing or invalid tokens with `401`.
+Open the URL shown in the terminal (port comes from `UI_PORT` in your env file). `/` redirects to `/auth` to **Sign in with Okta**; after login you land on the guardrail chat at `/chat`. Chat and provider requests send `Authorization: Bearer <access_token>`. Python backends (`main.py`, `main_guardrail.py`, `main_guardrail_litellm.py`) reject missing or invalid tokens with `401`.
 
 ### Python backends (individual)
 
@@ -215,15 +215,15 @@ button does not create or modify consent cookies.
 
 ### Standard UI (Okta + guardrail modes)
 
-`start-ui.mjs` enables Okta (`NEXT_PUBLIC_AUTH_MODE=okta-ui`) and keeps the with/without-guardrail chat at `/`.
+`start-ui.mjs` enables Okta (`NEXT_PUBLIC_AUTH_MODE=okta-ui`). `/` always redirects to `/auth`; the with/without-guardrail chat is at `/chat` after login.
 
 **Login flow (Authorization Code + PKCE):**
 
-1. Open `/` (or `/auth`) and click **Sign in with Okta**.
+1. Open `/` (redirects to `/auth`) and click **Sign in with Okta**.
 2. The browser stores a PKCE `code_verifier` + `state` in `sessionStorage`, then redirects to Okta (`/oauth2/v1/authorize`).
 3. After the user signs in, Okta redirects to `/auth/callback?code=…&state=…`.
 4. The callback page exchanges the code for tokens at Okta `/oauth2/v1/token` and stores them in `localStorage` (`okta_tokens`).
-5. The user is sent to `/`. Every chat request goes to `POST /api/ui` with `Authorization: Bearer <access_token>` (provider lists use the same header).
+5. The user is sent to `/chat`. Every chat request goes to `POST /api/ui` with `Authorization: Bearer <access_token>` (provider lists use the same header).
 6. Next.js forwards that header to `main.py` / `main_guardrail.py` / `main_guardrail_litellm.py`, which validate the access token with Okta `/oauth2/v1/userinfo` (JWT decode is a fallback). Invalid or missing tokens return `401` and the UI signs the user out.
 
 Sign out clears local tokens and redirects to Okta `/oauth2/v1/logout`, then back to `/auth`.
@@ -294,7 +294,8 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 
 | Endpoint | Auth | Description |
 |---|---|---|
-| `GET /` | Okta access token in `localStorage` | Aria chat UI (with/without guardrail). Unauthenticated users are sent to `/auth` |
+| `GET /` | Redirect | Always redirects to `/auth` (or `/login` / `/otp-login` for those UIs) |
+| `GET /chat` | Okta access token in `localStorage` | Aria chat UI (with/without guardrail) |
 | `POST /api/ui` | `Authorization: Bearer` (Okta access token) | Used by the browser UI (proxies to Python backend) |
 | `POST /api/chat` | Okta Bearer, or `api-key` / Bearer matching `CHATBOT_API_KEY` | Red teaming target endpoint on the Python backends |
 | `GET /api/providers` | `Authorization: Bearer` (Okta access token) | SDK provider list for the UI dropdown |
