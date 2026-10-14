@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { logoutStandard } from "@/lib/okta";
+import { logoutStandard } from "@/lib/okta-standard";
 
 type Provider = { id: string; label: string; supports_files?: boolean; file_accept?: string };
 
@@ -215,7 +215,7 @@ export default function Home() {
     let active = true;
 
     async function initialize() {
-      const sessionResponse = await fetch("/api/auth/session", {
+      const sessionResponse = await fetch("/api/standard-auth/session", {
         credentials: "same-origin",
       });
       if (!sessionResponse.ok) {

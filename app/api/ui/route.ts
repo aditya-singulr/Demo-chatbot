@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrls } from "@/lib/backends";
-import { getSessionAuthorization } from "@/lib/okta-session";
+import { getStandardSessionAuthorization } from "@/lib/okta-standard-session";
 
 export async function POST(req: NextRequest) {
   const { withoutGuardrail, withGuardrail, withGuardrailLitellm } = getBackendUrls();
-  const sessionAuthorization = getSessionAuthorization(req);
+  const sessionAuthorization = getStandardSessionAuthorization(req);
 
   if (!sessionAuthorization) {
     return NextResponse.json(

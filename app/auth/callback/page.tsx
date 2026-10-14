@@ -26,23 +26,7 @@ function CallbackHandler() {
     }
 
     handleCallback(code, state)
-      .then(async (tokens) => {
-        if (process.env.NEXT_PUBLIC_AUTH_MODE === "okta-standard") {
-          const sessionResponse = await fetch("/api/auth/session", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${tokens.access_token}`,
-            },
-          });
-
-          if (!sessionResponse.ok) {
-            throw new Error("Unable to establish the authenticated session");
-          }
-
-          router.replace("/");
-          return;
-        }
-
+      .then(() => {
         console.log("OAuth callback successful, redirecting to chat");
         router.replace("/auth/chat");
       })

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getSessionAccessToken,
-  OKTA_SESSION_COOKIE,
-  sessionCookieOptions,
-  validateOktaAccessToken,
-} from "@/lib/okta-session";
+  getStandardSessionAccessToken,
+  standardSessionCookieOptions,
+  STANDARD_OKTA_SESSION_COOKIE,
+  validateStandardOktaAccessToken,
+} from "@/lib/okta-standard-session";
 
 function unauthorized() {
   return NextResponse.json(
@@ -16,10 +16,9 @@ function unauthorized() {
 export async function POST(request: NextRequest) {
   const authorization = request.headers.get("authorization");
   const accessToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-
   if (!accessToken) return unauthorized();
 
-  const user = await validateOktaAccessToken(accessToken);
+  const user = await validateStandardOktaAccessToken(accessToken);
   if (!user) return unauthorized();
 
   const response = NextResponse.json({
@@ -30,18 +29,22 @@ export async function POST(request: NextRequest) {
       name: user.name,
     },
   });
-  response.cookies.set(OKTA_SESSION_COOKIE, accessToken, sessionCookieOptions());
+  response.cookies.set(
+    STANDARD_OKTA_SESSION_COOKIE,
+    accessToken,
+    standardSessionCookieOptions(),
+  );
   return response;
 }
 
 export async function GET(request: NextRequest) {
-  const accessToken = getSessionAccessToken(request);
+  const accessToken = getStandardSessionAccessToken(request);
   if (!accessToken) return unauthorized();
 
-  const user = await validateOktaAccessToken(accessToken);
+  const user = await validateStandardOktaAccessToken(accessToken);
   if (!user) {
     const response = unauthorized();
-    response.cookies.delete(OKTA_SESSION_COOKIE);
+    response.cookies.delete(STANDARD_OKTA_SESSION_COOKIE);
     return response;
   }
 
@@ -57,8 +60,8 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE() {
   const response = NextResponse.json({ authenticated: false });
-  response.cookies.set(OKTA_SESSION_COOKIE, "", {
-    ...sessionCookieOptions(),
+  response.cookies.set(STANDARD_OKTA_SESSION_COOKIE, "", {
+    ...standardSessionCookieOptions(),
     maxAge: 0,
   });
   return response;

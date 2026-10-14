@@ -65,17 +65,22 @@ const envPath = loadEnvFile(values["env-file"]);
 const uiPort = process.env.UI_PORT ?? "3000";
 const nextCmd = values.prod ? "start" : "dev";
 
-const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN || process.env.OKTA_DOMAIN;
-const oktaClientId = process.env.NEXT_PUBLIC_OKTA_CLIENT_ID || process.env.OKTA_CLIENT_ID;
+const oktaDomain =
+  process.env.NEXT_PUBLIC_STANDARD_OKTA_DOMAIN || process.env.OKTA_DOMAIN;
+const oktaClientId =
+  process.env.NEXT_PUBLIC_STANDARD_OKTA_CLIENT_ID || process.env.OKTA_CLIENT_ID;
 if (!oktaDomain) {
   console.warn("\nWarning: OKTA_DOMAIN is not set. Okta authentication will not work.\n");
 }
 
-if (process.env.OKTA_DOMAIN && !process.env.NEXT_PUBLIC_OKTA_DOMAIN) {
-  process.env.NEXT_PUBLIC_OKTA_DOMAIN = process.env.OKTA_DOMAIN;
+if (process.env.OKTA_DOMAIN && !process.env.NEXT_PUBLIC_STANDARD_OKTA_DOMAIN) {
+  process.env.NEXT_PUBLIC_STANDARD_OKTA_DOMAIN = process.env.OKTA_DOMAIN;
 }
-if (process.env.OKTA_CLIENT_ID && !process.env.NEXT_PUBLIC_OKTA_CLIENT_ID) {
-  process.env.NEXT_PUBLIC_OKTA_CLIENT_ID = process.env.OKTA_CLIENT_ID;
+if (
+  process.env.OKTA_CLIENT_ID &&
+  !process.env.NEXT_PUBLIC_STANDARD_OKTA_CLIENT_ID
+) {
+  process.env.NEXT_PUBLIC_STANDARD_OKTA_CLIENT_ID = process.env.OKTA_CLIENT_ID;
 }
 process.env.NEXT_PUBLIC_AUTH_MODE = "okta-standard";
 

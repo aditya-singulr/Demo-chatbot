@@ -10,18 +10,6 @@ export default function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
-    const standardMode = process.env.NEXT_PUBLIC_AUTH_MODE === "okta-standard";
-
-    if (standardMode) {
-      fetch("/api/auth/session", { credentials: "same-origin" })
-        .then((response) => {
-          if (response.ok) router.replace("/");
-          else setCheckingSession(false);
-        })
-        .catch(() => setCheckingSession(false));
-      return;
-    }
-
     if (hasValidTokens()) {
       router.replace("/auth/chat");
     } else {

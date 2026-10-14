@@ -115,10 +115,11 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 | `OKTA_CLIENT_ID` | No | SPA client ID expected in JWT `aud` (default `0oa26y1wj6p5lppaj1d8`) |
 | `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default `http://localhost:3001,https://chat-demo-external.singulr.ai`) |
 
-The browser login in `lib/okta.ts` uses these values. `scripts/start-ui.mjs` exposes them to the browser as `NEXT_PUBLIC_*` variables. The SPA app in Okta must allow:
+The standard UI uses [`lib/okta-standard.ts`](/Users/aditya/Cursor/Demo-chatbot/lib/okta-standard.ts)
+and fixed redirect URLs. The SPA app in Okta must allow:
 
-- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3001/auth/callback`)
-- Sign-out redirect: `{origin}/auth`
+- Sign-in redirect: `https://chat-demo.singulr.ai/auth/callback` and `http://localhost:3000/auth/callback`
+- Sign-out redirect: `https://chat-demo.singulr.ai/auth` and `http://localhost:3000/auth`
 - Grant type: Authorization Code with PKCE
 - Scopes: `openid`, `profile`, `email`
 
@@ -176,7 +177,7 @@ standard backends also require a valid Okta Bearer token.
 1. Open `/auth` and click **Sign in with Okta**.
 2. The browser stores a PKCE `code_verifier` + `state` in `sessionStorage`, then redirects to Okta (`/oauth2/v1/authorize`).
 3. After the user signs in, Okta redirects to `/auth/callback?code=…&state=…`.
-4. The callback page exchanges the code for tokens at Okta `/oauth2/v1/token`, validates the access token with Okta, and sets an HttpOnly session cookie.
+4. The dedicated callback page exchanges the code for tokens at Okta `/oauth2/v1/token`, validates the access token with Okta, and sets an HttpOnly session cookie.
 5. Middleware rejects unauthenticated page requests with a redirect to `/auth` and rejects unauthenticated API requests with `401`.
 6. Next.js reads the server-side session, forwards the bearer token to the selected Python backend, and signs the user out if Okta rejects it.
 
@@ -296,9 +297,9 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 | Endpoint | Auth | Description |
 |---|---|---|
 | `GET /` | Okta session | Aria chat UI |
-| `POST /api/auth/session` | Okta Bearer during login | Establishes the HttpOnly UI session |
-| `GET /api/auth/session` | Okta session | Validates the current UI session |
-| `DELETE /api/auth/session` | Optional session | Clears the UI session |
+| `POST /api/standard-auth/session` | Okta Bearer during login | Establishes the HttpOnly UI session |
+| `GET /api/standard-auth/session` | Okta session | Validates the current UI session |
+| `DELETE /api/standard-auth/session` | Optional session | Clears the UI session |
 | `POST /api/ui` | Okta session | Used by the browser UI (proxies to Python backend) |
 | `POST /api/chat` | Okta Bearer token | Red teaming target endpoint |
 | `GET /api/providers` | Okta session | SDK provider list for the UI dropdown |

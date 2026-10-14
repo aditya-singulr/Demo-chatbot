@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
-export const OKTA_SESSION_COOKIE = "novapay_okta_access_token";
+export const STANDARD_OKTA_SESSION_COOKIE =
+  "novapay_standard_okta_access_token";
 
 type OktaUserInfo = {
   sub?: string;
@@ -9,19 +10,27 @@ type OktaUserInfo = {
 };
 
 function getOktaDomain(): string {
-  return process.env.OKTA_DOMAIN ?? process.env.NEXT_PUBLIC_OKTA_DOMAIN ?? "singulr.okta.com";
+  return (
+    process.env.OKTA_DOMAIN ??
+    process.env.NEXT_PUBLIC_STANDARD_OKTA_DOMAIN ??
+    "singulr.okta.com"
+  );
 }
 
-export function getSessionAccessToken(request: NextRequest): string | null {
-  return request.cookies.get(OKTA_SESSION_COOKIE)?.value ?? null;
+export function getStandardSessionAccessToken(
+  request: NextRequest,
+): string | null {
+  return request.cookies.get(STANDARD_OKTA_SESSION_COOKIE)?.value ?? null;
 }
 
-export function getSessionAuthorization(request: NextRequest): string | null {
-  const token = getSessionAccessToken(request);
+export function getStandardSessionAuthorization(
+  request: NextRequest,
+): string | null {
+  const token = getStandardSessionAccessToken(request);
   return token ? `Bearer ${token}` : null;
 }
 
-export async function validateOktaAccessToken(
+export async function validateStandardOktaAccessToken(
   accessToken: string,
 ): Promise<OktaUserInfo | null> {
   try {
@@ -37,7 +46,7 @@ export async function validateOktaAccessToken(
   }
 }
 
-export function sessionCookieOptions() {
+export function standardSessionCookieOptions() {
   return {
     httpOnly: true,
     sameSite: "lax" as const,

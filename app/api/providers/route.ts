@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProvidersBackendUrl } from "@/lib/backends";
-import { getSessionAuthorization } from "@/lib/okta-session";
+import { getStandardSessionAuthorization } from "@/lib/okta-standard-session";
 
 // Fallback list so the dropdown still renders if the backend is unreachable.
 const FALLBACK = [
@@ -21,7 +21,7 @@ const FALLBACK = [
 
 export async function GET(request: NextRequest) {
   const backend = getProvidersBackendUrl();
-  const sessionAuthorization = getSessionAuthorization(request);
+  const sessionAuthorization = getStandardSessionAuthorization(request);
 
   if (!sessionAuthorization) {
     return NextResponse.json(

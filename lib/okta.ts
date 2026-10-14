@@ -4,10 +4,8 @@
  * Implements Authorization Code flow with PKCE for Single-Page Applications.
  */
 
-export const OKTA_DOMAIN =
-  process.env.NEXT_PUBLIC_OKTA_DOMAIN ?? "singulr.okta.com";
-export const OKTA_CLIENT_ID =
-  process.env.NEXT_PUBLIC_OKTA_CLIENT_ID ?? "0oa26y1wj6p5lppaj1d8";
+export const OKTA_DOMAIN = "singulr.okta.com";
+export const OKTA_CLIENT_ID = "0oa26y1wj6p5lppaj1d8";
 export const OKTA_REDIRECT_URI = typeof window !== "undefined"
   ? `${window.location.origin}/auth/callback`
   : "https://chat-demo-external.singulr.ai/auth/callback";
@@ -201,25 +199,6 @@ export async function handleCallback(code: string, state: string): Promise<OktaT
  */
 export function logout(): void {
   const idToken = getIdToken();
-  clearTokens();
-
-  if (idToken) {
-    const params = new URLSearchParams({
-      id_token_hint: idToken,
-      post_logout_redirect_uri: OKTA_LOGOUT_REDIRECT_URI,
-    });
-    window.location.href = `https://${OKTA_DOMAIN}/oauth2/v1/logout?${params.toString()}`;
-  } else {
-    window.location.href = OKTA_LOGOUT_REDIRECT_URI;
-  }
-}
-
-/**
- * Clear the server-side session before signing out of Okta.
- */
-export async function logoutStandard(): Promise<void> {
-  const idToken = getIdToken();
-  await fetch("/api/auth/session", { method: "DELETE" }).catch(() => {});
   clearTokens();
 
   if (idToken) {

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrls } from "@/lib/backends";
-import { getSessionAuthorization } from "@/lib/okta-session";
+import { getStandardSessionAuthorization } from "@/lib/okta-standard-session";
 
 const FALLBACK = [{ id: "gpt-4o", label: "gpt-4o" }];
 
 export async function GET(request: NextRequest) {
   const { withGuardrailLitellm } = getBackendUrls();
-  const sessionAuthorization = getSessionAuthorization(request);
+  const sessionAuthorization = getStandardSessionAuthorization(request);
 
   if (!sessionAuthorization) {
     return NextResponse.json(
