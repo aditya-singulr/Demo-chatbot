@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrls } from "@/lib/backends";
+import { requireOktaBearer, unauthorized } from "@/lib/okta-api";
 
 export async function POST(req: NextRequest) {
+  const authHeader = requireOktaBearer(req);
+  if (authHeader instanceof NextResponse) return authHeader;
+
   const { withoutGuardrail, withGuardrail, withGuardrailLitellm } = getBackendUrls();
 
   try {
@@ -33,8 +37,10 @@ export async function POST(req: NextRequest) {
 
     // forward selective incoming headers (Authorization, cookies, and any x- headers)
     const incomingHeaders = Object.fromEntries(req.headers as any) as Record<string, string>;
-    const forwardHeaders: Record<string, string> = { "Content-Type": "application/json" };
-    if (incomingHeaders.authorization) forwardHeaders.Authorization = incomingHeaders.authorization;
+    const forwardHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: authHeader,
+    };
     if (incomingHeaders.cookie) forwardHeaders.Cookie = incomingHeaders.cookie;
     for (const [k, v] of Object.entries(incomingHeaders)) {
       if (k.startsWith("x-")) forwardHeaders[k] = v;
@@ -51,6 +57,9 @@ export async function POST(req: NextRequest) {
     }).finally(() => clearTimeout(timeout));
 
     if (!pyRes.ok) {
+      if (pyRes.status === 401) {
+        return unauthorized();
+      }
       const body = await pyRes.text().catch(() => "");
       console.error("Python backend error", {
         backendUrl,

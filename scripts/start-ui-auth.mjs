@@ -9,15 +9,15 @@
  * Next.js on the UI_PORT_AUTH port (default: 3001).
  *
  * Required environment variables for Okta:
- *   - NEXT_PUBLIC_OKTA_DOMAIN: Your Okta domain (e.g., dev-12345.okta.com)
- *   - OKTA_API_TOKEN: API token for backend session validation
- *   - OKTA_SESSION_COOKIE_NAME: Cookie name (default: okta_session)
+ *   - OKTA_DOMAIN or NEXT_PUBLIC_OKTA_DOMAIN
+ *   - OKTA_CLIENT_ID or NEXT_PUBLIC_OKTA_CLIENT_ID
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { requireOktaEnv } from "./require-okta-env.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const chatbotDir = join(root, "python-chatbot");
@@ -76,32 +76,20 @@ if (!values["env-file"]) {
 }
 
 const envPath = loadEnvFile(values["env-file"]);
+const okta = requireOktaEnv();
 
 // Use UI_PORT_AUTH for authenticated UI (default: 3001)
 const uiPort = process.env.UI_PORT_AUTH ?? "3001";
 const nextCmd = values.prod ? "start" : "dev";
 
-// Validate required Okta config
-const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN || process.env.OKTA_DOMAIN;
-if (!oktaDomain) {
-  console.warn("\n⚠️  Warning: NEXT_PUBLIC_OKTA_DOMAIN not set. Okta authentication will not work.\n");
-}
-
-// Set NEXT_PUBLIC_ prefixed vars for client-side access
-if (process.env.OKTA_DOMAIN && !process.env.NEXT_PUBLIC_OKTA_DOMAIN) {
-  process.env.NEXT_PUBLIC_OKTA_DOMAIN = process.env.OKTA_DOMAIN;
-}
 if (process.env.OKTA_SESSION_COOKIE_NAME && !process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME) {
   process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME = process.env.OKTA_SESSION_COOKIE_NAME;
 }
-// Enable auth mode for middleware redirect
 process.env.NEXT_PUBLIC_AUTH_MODE = "okta";
 
 console.log(`Loading env from ${envPath}`);
 console.log(`Starting Next.js (auth) on port ${uiPort} (${nextCmd})`);
-if (oktaDomain) {
-  console.log(`Okta domain: ${oktaDomain}`);
-}
+console.log(`Okta domain: ${okta.domain}`);
 
 const child = spawn("npx", ["next", nextCmd, "-p", uiPort], {
   cwd: root,

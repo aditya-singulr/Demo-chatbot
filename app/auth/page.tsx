@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { initiateLogin, hasValidTokens } from "@/lib/okta";
+import { initiateLogin, hasValidTokens, getPostLoginPath } from "@/lib/okta";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function LoginPage() {
   useEffect(() => {
     // Check if already authenticated
     if (hasValidTokens()) {
-      router.replace("/auth/chat");
+      router.replace(getPostLoginPath());
     } else {
       setCheckingSession(false);
     }
@@ -72,11 +72,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="text-xs text-gray-400 text-center mt-4">
-          <a href="/" className="hover:text-gray-600 underline">
-            Use without authentication
-          </a>
-        </p>
       </div>
     </div>
   );

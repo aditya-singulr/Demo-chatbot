@@ -1,12 +1,11 @@
 import asyncio
-import os
 from typing import Optional
 
 import env_config
 
 env_config.setup(__name__)
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -17,6 +16,12 @@ singulr_sdk.configure()
 # Imported AFTER configure() so every technique's client is routed through the
 # Singulr proxy (configure() patches botocore and sets the SDK base URLs).
 import providers
+from okta_auth import (
+    require_auth,
+    require_okta_or_api_key,
+    optional_auth,
+    AuthenticatedUser,
+)
 
 app = FastAPI(title="NovaPay Python Chatbot")
 
@@ -102,7 +107,10 @@ def _messages_payload(items: list[MessageItem]) -> list[dict]:
 
 
 @app.post("/api/ui")
-async def ui_chat(req: UiChatRequest):
+async def ui_chat(
+    req: UiChatRequest,
+    user: AuthenticatedUser = Depends(require_auth),
+):
     messages = _messages_payload(req.messages)
     if not messages:
         raise HTTPException(status_code=400, detail="messages required")
@@ -121,20 +129,18 @@ async def ui_chat(req: UiChatRequest):
             "reason": "",
             "total_attacks": 0,
         },
+        "user": {
+            "email": user.email,
+            "user_id": user.user_id,
+        },
     }
 
 
 @app.post("/api/chat")
 async def api_chat(
     req: ApiChatRequest,
-    api_key: Optional[str] = Header(None),
-    authorization: Optional[str] = Header(None),
+    _: AuthenticatedUser = Depends(require_okta_or_api_key),
 ):
-    expected = os.environ.get("CHATBOT_API_KEY")
-    token = api_key or (authorization.removeprefix("Bearer ").strip() if authorization else None)
-    if expected and token != expected:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
     messages = _messages_payload(req.messages)
     if not messages:
         raise HTTPException(status_code=400, detail="messages required")
@@ -152,8 +158,29 @@ async def api_chat(
 
 
 @app.get("/api/providers")
-async def get_providers():
+async def get_providers(_: AuthenticatedUser = Depends(require_auth)):
     return {"providers": providers.list_providers(), "default": providers.DEFAULT_PROVIDER}
+
+
+@app.get("/api/me")
+async def get_current_user(user: AuthenticatedUser = Depends(require_auth)):
+    return {
+        "user_id": user.user_id,
+        "email": user.email,
+        "name": user.name,
+        "authenticated": True,
+    }
+
+
+@app.get("/api/auth/check")
+async def check_auth(user: Optional[AuthenticatedUser] = Depends(optional_auth)):
+    if user:
+        return {
+            "authenticated": True,
+            "user_id": user.user_id,
+            "email": user.email,
+        }
+    return {"authenticated": False}
 
 
 @app.get("/health")
@@ -162,6 +189,7 @@ async def health():
         "status": "ok",
         "backend": "python",
         "model": BEDROCK_MODEL_ID,
+        "auth": "okta-oauth",
     }
 
 

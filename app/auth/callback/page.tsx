@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { handleCallback } from "@/lib/okta";
+import { getPostLoginPath, handleCallback } from "@/lib/okta";
 
 function CallbackHandler() {
   const router = useRouter();
@@ -28,7 +28,7 @@ function CallbackHandler() {
     handleCallback(code, state)
       .then(() => {
         console.log("OAuth callback successful, redirecting to chat");
-        router.replace("/auth/chat");
+        router.replace(getPostLoginPath());
       })
       .catch((err) => {
         console.error("OAuth callback error:", err);

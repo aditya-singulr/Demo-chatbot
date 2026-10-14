@@ -5,13 +5,14 @@ Validates access tokens by introspecting with Okta or verifying JWT locally.
 """
 
 import os
+import secrets
 from functools import lru_cache
 from typing import Optional
 import json
 import base64
 
 import httpx
-from fastapi import HTTPException, Request, Depends
+from fastapi import HTTPException, Request, Depends, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -208,3 +209,24 @@ async def optional_auth(
         return None
 
     return validate_access_token(token)
+
+
+async def require_okta_or_api_key(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    api_key: Optional[str] = Header(None),
+) -> AuthenticatedUser:
+    """
+    Require Okta, or the static CHATBOT_API_KEY used by red-teaming clients.
+
+    Accepts `api-key` or `Authorization: Bearer`.
+    """
+    expected = os.environ.get("CHATBOT_API_KEY")
+    presented = api_key or (credentials.credentials if credentials else None)
+    if not presented:
+        presented = get_token_from_header(request)
+
+    if expected and presented and secrets.compare_digest(presented, expected):
+        return AuthenticatedUser(user_id="api-key", name="api-key")
+
+    return await require_auth(request, credentials)

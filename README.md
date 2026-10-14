@@ -1,6 +1,6 @@
 # Aria — NovaPay Support Chatbot
 
-A fictional customer support chatbot for red teaming tests. The UI is a Next.js app; model calls are handled by Python FastAPI backends (with and without Singulr guardrails).
+A fictional customer support chatbot for red teaming tests. The UI is a Next.js app; model calls are handled by Python FastAPI backends (with and without Singulr guardrails). The standard UI (`scripts/start-ui.mjs`) uses the same Okta Authorization Code + PKCE login as `/auth`.
 
 ## Architecture
 
@@ -95,7 +95,7 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 
 | Variable | Required | Description |
 |---|---|---|
-| `CHATBOT_API_KEY` | No | If set, `POST /api/chat` on `main.py` requires this token |
+| `CHATBOT_API_KEY` | No | Alternate token for `POST /api/chat` (Okta Bearer is always accepted). If unset, `/api/chat` still requires a valid Okta access token |
 | `LOGIN_USERNAME` | No | Username for `main_login.py` (default `demo`) |
 | `LOGIN_PASSWORD` | No | Password for `main_login.py` (default `demo123`) |
 | `LOGIN_TOKEN` | No | Static token issued after login (default `novapay-static-token`) |
@@ -111,13 +111,13 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 
 | Variable | Required | Description |
 |---|---|---|
-| `OKTA_DOMAIN` | No | Okta org domain used by the Python backend to validate tokens (default `singulr.okta.com`) |
-| `OKTA_CLIENT_ID` | No | SPA client ID expected in JWT `aud` (default `0oa26y1wj6p5lppaj1d8`) |
+| `OKTA_DOMAIN` | Yes* | Okta org domain. `start-ui.mjs` / `start-ui-auth.mjs` refuse to start without this or `NEXT_PUBLIC_OKTA_DOMAIN` |
+| `OKTA_CLIENT_ID` | Yes* | SPA client ID expected in JWT `aud`. Required to start those UIs (or set `NEXT_PUBLIC_OKTA_CLIENT_ID`) |
 | `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default `http://localhost:3001,https://chat-demo-external.singulr.ai`) |
 
-The browser login in `lib/okta.ts` uses the same domain and client ID (currently hardcoded). The SPA app in Okta must allow:
+\*Required to start `scripts/start-ui.mjs` and `scripts/start-ui-auth.mjs`. The scripts copy these onto `NEXT_PUBLIC_OKTA_DOMAIN` / `NEXT_PUBLIC_OKTA_CLIENT_ID` for the browser login in `lib/okta.ts`. The SPA app in Okta must allow:
 
-- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3001/auth/callback`)
+- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3000/auth/callback` for the standard UI, `http://localhost:3001/auth/callback` for the dedicated Okta UI)
 - Sign-out redirect: `{origin}/auth`
 - Grant type: Authorization Code with PKCE
 - Scopes: `openid`, `profile`, `email`
@@ -140,7 +140,7 @@ Starts all three Python backends and the UI using `python-chatbot/.env`:
 ./dev.sh
 ```
 
-Open the URL shown in the terminal (port comes from `UI_PORT` in your env file).
+Open the URL shown in the terminal (port comes from `UI_PORT` in your env file). `/` redirects to `/auth` to **Sign in with Okta**; after login you land on the guardrail chat at `/chat`. Chat and provider requests send `Authorization: Bearer <access_token>`. Python backends (`main.py`, `main_guardrail.py`, `main_guardrail_litellm.py`) reject missing or invalid tokens with `401`.
 
 ### Python backends (individual)
 
@@ -213,7 +213,20 @@ The Next.js proxy forwards that cookie to the browser and forwards it back to Py
 requests. The cookie-consent dialog shown after login is only visual; its **Accept all cookies**
 button does not create or modify consent cookies.
 
-### UI (individual)
+### Standard UI (Okta + guardrail modes)
+
+`start-ui.mjs` enables Okta (`NEXT_PUBLIC_AUTH_MODE=okta-ui`). `/` always redirects to `/auth`; the with/without-guardrail chat is at `/chat` after login.
+
+**Login flow (Authorization Code + PKCE):**
+
+1. Open `/` (redirects to `/auth`) and click **Sign in with Okta**.
+2. The browser stores a PKCE `code_verifier` + `state` in `sessionStorage`, then redirects to Okta (`/oauth2/v1/authorize`).
+3. After the user signs in, Okta redirects to `/auth/callback?code=…&state=…`.
+4. The callback page exchanges the code for tokens at Okta `/oauth2/v1/token` and stores them in `localStorage` (`okta_tokens`).
+5. The user is sent to `/chat`. Every chat request goes to `POST /api/ui` with `Authorization: Bearer <access_token>` (provider lists use the same header).
+6. Next.js forwards that header to `main.py` / `main_guardrail.py` / `main_guardrail_litellm.py`, which validate the access token with Okta `/oauth2/v1/userinfo` (JWT decode is a fallback). Invalid or missing tokens return `401` and the UI signs the user out.
+
+Sign out clears local tokens and redirects to Okta `/oauth2/v1/logout`, then back to `/auth`.
 
 From the project root:
 
@@ -281,10 +294,12 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 
 | Endpoint | Auth | Description |
 |---|---|---|
-| `GET /` | None | Aria chat UI |
-| `POST /api/ui` | None | Used by the browser UI (proxies to Python backend) |
-| `POST /api/chat` | `api-key` or `Authorization: Bearer` header | Red teaming target endpoint |
-| `GET /api/providers` | None | SDK provider list for the UI dropdown |
+| `GET /` | Redirect | Always redirects to `/auth` (or `/login` / `/otp-login` for those UIs) |
+| `GET /chat` | Okta access token in `localStorage` | Aria chat UI (with/without guardrail) |
+| `POST /api/ui` | `Authorization: Bearer` (Okta access token) | Used by the browser UI (proxies to Python backend) |
+| `POST /api/chat` | Okta Bearer, or `api-key` / Bearer matching `CHATBOT_API_KEY` | Red teaming target endpoint on the Python backends |
+| `GET /api/providers` | `Authorization: Bearer` (Okta access token) | SDK provider list for the UI dropdown |
+| `GET /api/litellm-providers` | `Authorization: Bearer` (Okta access token) | LiteLLM model list for the UI dropdown |
 | `GET /health` | None | Backend health check (Python) |
 | `GET /auth` | None | Okta SSO login UI |
 | `GET /auth/callback` | None | Okta OAuth redirect (exchanges `code` for tokens) |
