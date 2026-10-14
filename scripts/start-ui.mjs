@@ -65,8 +65,29 @@ const envPath = loadEnvFile(values["env-file"]);
 const uiPort = process.env.UI_PORT ?? "3000";
 const nextCmd = values.prod ? "start" : "dev";
 
+// --- Okta authentication setup (same as start-ui-auth.mjs) ---
+
+const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN || process.env.OKTA_DOMAIN;
+if (!oktaDomain) {
+  console.warn("\n⚠️  Warning: NEXT_PUBLIC_OKTA_DOMAIN / OKTA_DOMAIN not set. Okta authentication will not work.\n");
+}
+
+// Set NEXT_PUBLIC_ prefixed vars for client-side access
+if (process.env.OKTA_DOMAIN && !process.env.NEXT_PUBLIC_OKTA_DOMAIN) {
+  process.env.NEXT_PUBLIC_OKTA_DOMAIN = process.env.OKTA_DOMAIN;
+}
+if (process.env.OKTA_SESSION_COOKIE_NAME && !process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME) {
+  process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME = process.env.OKTA_SESSION_COOKIE_NAME;
+}
+// Enable auth mode for middleware redirect
+process.env.NEXT_PUBLIC_AUTH_MODE = "okta";
+
 console.log(`Loading env from ${envPath}`);
 console.log(`Starting Next.js on port ${uiPort} (${nextCmd})`);
+if (oktaDomain) {
+  console.log(`Okta domain: ${oktaDomain}`);
+  console.log(`Auth mode: okta (redirect / → /auth)`);
+}
 
 const child = spawn("npx", ["next", nextCmd, "-p", uiPort], {
   cwd: root,

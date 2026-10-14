@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrls } from "@/lib/backends";
+import { requireAuth } from "@/lib/auth-guard";
 
 export async function POST(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
   const { withoutGuardrail, withGuardrail, withGuardrailLitellm } = getBackendUrls();
 
   try {

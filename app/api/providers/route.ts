@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getProvidersBackendUrl } from "@/lib/backends";
+import { requireAuth } from "@/lib/auth-guard";
 
 // Fallback list so the dropdown still renders if the backend is unreachable.
 const FALLBACK = [
@@ -18,7 +19,10 @@ const FALLBACK = [
   { id: "bedrock_retrieve_and_generate", label: "Bedrock Agent · Retrieve & Generate (KB RAG)", supports_files: false },
 ];
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = await requireAuth(req);
+  if (authError) return authError;
+
   const backend = getProvidersBackendUrl();
 
   try {

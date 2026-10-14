@@ -160,14 +160,21 @@ python main_otp_login.py --env-file .env
 
 ### Okta SSO login UI
 
-Start the Okta-authenticated backend and a UI that redirects `/` to `/auth`:
+The standard UI (`start-ui.mjs`) has Okta authentication built in. When `OKTA_DOMAIN` / `NEXT_PUBLIC_OKTA_DOMAIN` is set in the env file, visiting `/` redirects to `/auth` for Okta sign-in. All standard API routes (`/api/ui`, `/api/providers`, `/api/litellm-providers`) require a valid Okta access token when auth mode is active.
+
+```bash
+npm run dev:ui
+# or: node scripts/start-ui.mjs --env-file python-chatbot/.env
+```
+
+The redirect URL for this instance is `https://chat-demo.singulr.ai/auth` (configured in the Okta application).
+
+A separate Okta-authenticated instance can also be started on a different port (default `3001`) using `start-ui-auth.mjs`, which uses `UI_PORT_AUTH` and expects the redirect URL `https://chat-demo-external.singulr.ai/auth`:
 
 ```bash
 python python-chatbot/main_auth.py --env-file python-chatbot/.env
 npm run dev:ui:auth
 ```
-
-Open the URL shown in the terminal (port comes from `UI_PORT_AUTH`, default `3001`). The same pages also work on the standard UI at `/auth` if `main_auth.py` is running.
 
 **Login flow (Authorization Code + PKCE):**
 
@@ -177,6 +184,7 @@ Open the URL shown in the terminal (port comes from `UI_PORT_AUTH`, default `300
 4. The callback page exchanges the code for tokens at Okta `/oauth2/v1/token` and stores them in `localStorage` (`okta_tokens`).
 5. The user is sent to `/auth/chat`. Every chat request goes to `POST /api/auth/ui` with `Authorization: Bearer <access_token>`.
 6. Next.js forwards that header to `main_auth.py`, which validates the access token with Okta `/oauth2/v1/userinfo` (JWT decode is a fallback). Invalid or missing tokens return `401` and the UI signs the user out.
+7. Standard API routes (`/api/ui`, `/api/providers`, `/api/litellm-providers`) also validate the Okta token server-side via the Okta userinfo endpoint when auth mode is active.
 
 Sign out clears local tokens and redirects to Okta `/oauth2/v1/logout`, then back to `/auth`.
 
