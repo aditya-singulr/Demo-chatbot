@@ -7,7 +7,7 @@ A fictional customer support chatbot for red teaming tests. The UI is a Next.js 
 | Component | Entrypoint | Default port env var |
 |---|---|---|
 | UI | `scripts/start-ui.mjs` | `UI_PORT` (3000) |
-| Authenticated UI | `scripts/start-ui-auth.mjs` | `UI_PORT` (3000) |
+| Authenticated UI | `scripts/start-ui-auth.mjs` | `AUTH_UI_PORT` (3001) |
 | Backend — no guardrail | `python-chatbot/main.py` | `BACKEND_PORT_NO_GUARDRAIL` (8000) |
 | Backend — Singulr SDK guardrail | `python-chatbot/main_guardrail.py` | `BACKEND_PORT_GUARDRAIL` (8001) |
 | Backend — LiteLLM guardrail | `python-chatbot/main_guardrail_litellm.py` | `BACKEND_PORT_GUARDRAIL_LITELLM` (8002) |
@@ -30,6 +30,7 @@ cp python-chatbot/.env.example python-chatbot/.env
 | Variable | Required | Used by | Description |
 |---|---|---|---|
 | `UI_PORT` | No | UI | Port Next.js listens on (default `3000`) |
+| `AUTH_UI_PORT` | No | Authenticated UI | Port for the authenticated Next.js server (default `3001`) |
 | `BACKEND_PORT_NO_GUARDRAIL` | No | `main.py`, UI | Port for the no-guardrail backend (default `8000`) |
 | `BACKEND_PORT_GUARDRAIL` | No | `main_guardrail.py`, UI | Port for the Singulr SDK backend (default `8001`) |
 | `BACKEND_PORT_GUARDRAIL_LITELLM` | No | `main_guardrail_litellm.py`, UI | Port for the LiteLLM backend (default `8002`) |
@@ -105,11 +106,11 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 |---|---|---|
 | `OKTA_DOMAIN` | No | Okta org domain used by the Python backend to validate tokens (default `singulr.okta.com`) |
 | `OKTA_CLIENT_ID` | No | SPA client ID expected in JWT `aud` (default `0oa26y1wj6p5lppaj1d8`) |
-| `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default includes `http://localhost:3000`) |
+| `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default includes `http://localhost:3000` and `http://localhost:3001`) |
 
 The browser login in `lib/okta.ts` uses the same domain and client ID (currently hardcoded). The SPA app in Okta must allow:
 
-- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3000/auth/callback`)
+- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3001/auth/callback`)
 - Sign-out redirect: `{origin}/auth`
 - Grant type: Authorization Code with PKCE
 - Scopes: `openid`, `profile`, `email`
@@ -158,7 +159,7 @@ all three authenticated UIs at `/auth`, `/login`, and `/otp-login`:
 ```
 
 The authenticated backend uses `BACKEND_PORT_AUTHENTICATED` (default `8003`) and
-the UI uses `UI_PORT` (default `3000`). You can also start them individually:
+the UI uses `AUTH_UI_PORT` (default `3001`). You can also start them individually:
 
 ```bash
 python python-chatbot/main_auth.py --env-file python-chatbot/.env

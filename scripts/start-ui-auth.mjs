@@ -73,7 +73,7 @@ if (!values["env-file"]) {
 }
 
 const envPath = loadEnvFile(values["env-file"]);
-const uiPort = process.env.UI_PORT ?? "3000";
+const uiPort = process.env.AUTH_UI_PORT ?? "3001";
 const nextCmd = values.prod ? "start" : "dev";
 process.env.AUTHENTICATED_UI_ONLY = "true";
 

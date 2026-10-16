@@ -571,6 +571,7 @@ def setup(module_name: str, *, default_env_file: str = ".env") -> None:
 | Variable | Default | Component |
 |----------|---------|-----------|
 | `UI_PORT` | 3000 | Next.js frontend |
+| `AUTH_UI_PORT` | 3001 | Authenticated Next.js frontend |
 | `BACKEND_PORT_NO_GUARDRAIL` | 8000 | main.py |
 | `BACKEND_PORT_GUARDRAIL` | 8001 | main_guardrail.py |
 | `BACKEND_PORT_GUARDRAIL_LITELLM` | 8002 | main_guardrail_litellm.py |
