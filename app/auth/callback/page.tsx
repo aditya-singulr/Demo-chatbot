@@ -16,12 +16,12 @@ function CallbackHandler() {
     const errorDescription = searchParams.get("error_description");
 
     if (errorParam) {
-      setError(errorDescription || errorParam);
+      queueMicrotask(() => setError(errorDescription || errorParam));
       return;
     }
 
     if (!code || !state) {
-      setError("Missing authorization code or state");
+      queueMicrotask(() => setError("Missing authorization code or state"));
       return;
     }
 

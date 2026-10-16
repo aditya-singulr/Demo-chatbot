@@ -15,15 +15,13 @@ export function getBackendUrls() {
     withGuardrailLitellm:
       process.env.BACKEND_WITH_GUARDRAIL_LITELLM ??
       backendUrlFromPort("BACKEND_PORT_GUARDRAIL_LITELLM", "8002"),
-    withAuth:
+    authenticated:
+      process.env.BACKEND_AUTHENTICATED ??
       process.env.BACKEND_WITH_AUTH ??
-      backendUrlFromPort("BACKEND_PORT_AUTH", "8003"),
-    withLogin:
-      process.env.BACKEND_WITH_LOGIN ??
-      backendUrlFromPort("BACKEND_PORT_LOGIN", "8004"),
-    withOtpLogin:
-      process.env.BACKEND_WITH_OTP_LOGIN ??
-      backendUrlFromPort("BACKEND_PORT_OTP_LOGIN", "8005"),
+      backendUrlFromPort(
+        "BACKEND_PORT_AUTHENTICATED",
+        process.env.BACKEND_PORT_AUTH ?? "8003",
+      ),
   };
 }
 

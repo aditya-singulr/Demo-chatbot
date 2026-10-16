@@ -247,16 +247,17 @@ app.add_middleware(CORSMiddleware, ...)
 
 ### OTP Cookie Backend
 
-`python-chatbot/main_otp_login.py` follows the same provider and model-call
-structure as `main_login.py`, with a two-step authentication flow:
+The unified authenticated backend in `python-chatbot/main_auth.py` supports
+the same two-step authentication flow alongside Okta and password-token auth:
 
-- `POST /api/login` validates the static username/password and returns an OTP
+- `POST /api/otp-login/login` validates the static username/password and returns an OTP
   challenge state.
-- `POST /api/verify-otp` validates the constant demo OTP and sets an
+- `POST /api/otp-login/verify` validates the constant demo OTP and sets an
   HTTP-only, `SameSite=Lax` chat-session cookie.
-- `POST /api/ui`, `POST /api/chat`, `GET /api/me`, and `GET /api/auth/check`
+- `POST /api/otp-login/ui`, `POST /api/otp-login/chat`,
+  `GET /api/otp-login/me`, and `GET /api/otp-login/check`
   use that cookie for authentication.
-- `POST /api/logout` clears the chat-session cookie.
+- `POST /api/otp-login/logout` clears the chat-session cookie.
 
 The cookie value is intentionally static for this demo and is configured with
 `OTP_CHAT_SESSION`, `OTP_CHAT_COOKIE_NAME`, and `OTP_CHAT_COOKIE_MAX_AGE`.
@@ -573,10 +574,7 @@ def setup(module_name: str, *, default_env_file: str = ".env") -> None:
 | `BACKEND_PORT_NO_GUARDRAIL` | 8000 | main.py |
 | `BACKEND_PORT_GUARDRAIL` | 8001 | main_guardrail.py |
 | `BACKEND_PORT_GUARDRAIL_LITELLM` | 8002 | main_guardrail_litellm.py |
-| `BACKEND_PORT_LOGIN` | 8004 | main_login.py |
-| `BACKEND_PORT_OTP_LOGIN` | 8005 | main_otp_login.py |
-| `UI_PORT_LOGIN` | 3002 | Username/password login UI |
-| `UI_PORT_OTP_LOGIN` | 3003 | Username/password + OTP login UI |
+| `BACKEND_PORT_AUTHENTICATED` | 8003 | main_auth.py |
 
 ### Backend URL Resolution (lib/backends.ts)
 
@@ -589,10 +587,8 @@ export function getBackendUrls() {
       `http://${BACKEND_HOST}:${BACKEND_PORT_GUARDRAIL}`,
     withGuardrailLitellm: process.env.BACKEND_WITH_GUARDRAIL_LITELLM ??
       `http://${BACKEND_HOST}:${BACKEND_PORT_GUARDRAIL_LITELLM}`,
-    withLogin: process.env.BACKEND_WITH_LOGIN ??
-      `http://${BACKEND_HOST}:${BACKEND_PORT_LOGIN}`,
-    withOtpLogin: process.env.BACKEND_WITH_OTP_LOGIN ??
-      `http://${BACKEND_HOST}:${BACKEND_PORT_OTP_LOGIN}`,
+    authenticated: process.env.BACKEND_AUTHENTICATED ??
+      `http://${BACKEND_HOST}:${BACKEND_PORT_AUTHENTICATED}`,
   };
 }
 ```
@@ -864,12 +860,13 @@ def call_my_provider(messages: list[dict], system: str) -> str:
 | `python-chatbot/main.py` | No-guardrail backend |
 | `python-chatbot/main_guardrail.py` | Singulr SDK guardrail backend |
 | `python-chatbot/main_guardrail_litellm.py` | LiteLLM guardrail backend |
-| `python-chatbot/main_otp_login.py` | Username/password + OTP cookie backend |
+| `python-chatbot/main_auth.py` | Okta, username/password, and OTP-cookie authenticated backend |
 | `python-chatbot/providers.py` | SDK provider implementations |
 | `python-chatbot/litellm_utils.py` | LiteLLM provider implementation |
 | `python-chatbot/env_config.py` | Environment file loading |
 | `scripts/start-ui.mjs` | UI startup script |
-| `scripts/start-ui-otp-login.mjs` | OTP UI startup script |
+| `scripts/start-ui-auth.mjs` | Authenticated UI startup script |
+| `dev-auth.sh` | Unified authenticated backend and UI startup script |
 
 ---
 

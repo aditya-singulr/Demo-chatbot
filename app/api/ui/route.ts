@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
         : withoutGuardrail;
 
     // forward selective incoming headers (Authorization, cookies, and any x- headers)
-    const incomingHeaders = Object.fromEntries(req.headers as any) as Record<string, string>;
+    const incomingHeaders = Object.fromEntries(req.headers.entries());
     const forwardHeaders: Record<string, string> = { "Content-Type": "application/json" };
     if (incomingHeaders.authorization) forwardHeaders.Authorization = incomingHeaders.authorization;
     if (incomingHeaders.cookie) forwardHeaders.Cookie = incomingHeaders.cookie;
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     let data: unknown;
     try {
       data = await pyRes.json();
-    } catch (err) {
+    } catch {
       const text = await pyRes.text().catch(() => "");
       console.error("Python backend returned invalid JSON", { backendUrl, status: pyRes.status, text });
       return NextResponse.json({ error: "Invalid response from backend" }, { status: 502 });

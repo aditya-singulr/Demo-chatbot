@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Run the three authenticated UI routes with one unified Python backend.
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_DIR="$ROOT_DIR/python-chatbot"
+VENV_DIR="$PY_DIR/.venv"
+
+if [ ! -d "$VENV_DIR" ]; then
+  echo "Creating Python virtualenv at $VENV_DIR"
+  python3 -m venv "$VENV_DIR"
+  "$VENV_DIR/bin/pip" install --upgrade pip >/dev/null
+  "$VENV_DIR/bin/pip" install -r "$PY_DIR/requirements.txt"
+fi
+
+if [ ! -d "$ROOT_DIR/node_modules" ]; then
+  echo "Installing frontend dependencies"
+  (cd "$ROOT_DIR" && npm install)
+fi
+
+PIDS=()
+
+cleanup() {
+  echo ""
+  echo "Shutting down..."
+  for pid in "${PIDS[@]}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  wait 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+echo "Starting unified authenticated backend..."
+("$VENV_DIR/bin/python" "$PY_DIR/main_auth.py" --env-file .env) &
+PIDS+=($!)
+
+echo "Starting Next.js with /auth, /login, and /otp-login..."
+(node "$ROOT_DIR/scripts/start-ui-auth.mjs" --env-file .env) &
+PIDS+=($!)
+
+wait

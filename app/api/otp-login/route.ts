@@ -3,7 +3,7 @@ import { proxyOtpJson } from "@/lib/otp-login-proxy";
 
 export async function POST(request: NextRequest) {
   try {
-    return await proxyOtpJson(request, "/api/login", {
+    return await proxyOtpJson(request, "/api/otp-login/login", {
       method: "POST",
       body: await request.json(),
     });

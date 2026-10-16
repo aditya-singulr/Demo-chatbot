@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { initiateLogin, hasValidTokens } from "@/lib/okta";
 
@@ -14,7 +15,7 @@ export default function LoginPage() {
     if (hasValidTokens()) {
       router.replace("/auth/chat");
     } else {
-      setCheckingSession(false);
+      queueMicrotask(() => setCheckingSession(false));
     }
   }, [router]);
 
@@ -73,9 +74,9 @@ export default function LoginPage() {
         </div>
 
         <p className="text-xs text-gray-400 text-center mt-4">
-          <a href="/" className="hover:text-gray-600 underline">
+          <Link href="/" className="hover:text-gray-600 underline">
             Use without authentication
-          </a>
+          </Link>
         </p>
       </div>
     </div>

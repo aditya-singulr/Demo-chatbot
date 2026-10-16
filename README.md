@@ -7,12 +7,11 @@ A fictional customer support chatbot for red teaming tests. The UI is a Next.js 
 | Component | Entrypoint | Default port env var |
 |---|---|---|
 | UI | `scripts/start-ui.mjs` | `UI_PORT` (3000) |
+| Authenticated UI | `scripts/start-ui-auth.mjs` | `UI_PORT` (3000) |
 | Backend — no guardrail | `python-chatbot/main.py` | `BACKEND_PORT_NO_GUARDRAIL` (8000) |
 | Backend — Singulr SDK guardrail | `python-chatbot/main_guardrail.py` | `BACKEND_PORT_GUARDRAIL` (8001) |
 | Backend — LiteLLM guardrail | `python-chatbot/main_guardrail_litellm.py` | `BACKEND_PORT_GUARDRAIL_LITELLM` (8002) |
-| Backend — Okta SSO | `python-chatbot/main_auth.py` | `BACKEND_PORT_AUTH` (8003) |
-| Backend — username/password login | `python-chatbot/main_login.py` | `BACKEND_PORT_LOGIN` (8004) |
-| Backend — username/password + constant OTP login | `python-chatbot/main_otp_login.py` | `BACKEND_PORT_OTP_LOGIN` (8005) |
+| Backend — authenticated modes (Okta, login, OTP) | `python-chatbot/main_auth.py` | `BACKEND_PORT_AUTHENTICATED` (8003) |
 
 All processes read config from a **single env file** passed via `--env-file`. See `python-chatbot/.env.example`.
 
@@ -34,12 +33,7 @@ cp python-chatbot/.env.example python-chatbot/.env
 | `BACKEND_PORT_NO_GUARDRAIL` | No | `main.py`, UI | Port for the no-guardrail backend (default `8000`) |
 | `BACKEND_PORT_GUARDRAIL` | No | `main_guardrail.py`, UI | Port for the Singulr SDK backend (default `8001`) |
 | `BACKEND_PORT_GUARDRAIL_LITELLM` | No | `main_guardrail_litellm.py`, UI | Port for the LiteLLM backend (default `8002`) |
-| `BACKEND_PORT_AUTH` | No | `main_auth.py`, UI | Port for the Okta-authenticated backend (default `8003`) |
-| `BACKEND_PORT_LOGIN` | No | `main_login.py`, UI | Port for the username/password login backend (default `8004`) |
-| `BACKEND_PORT_OTP_LOGIN` | No | `main_otp_login.py`, UI | Port for the username/password + OTP cookie backend (default `8005`) |
-| `UI_PORT_AUTH` | No | Okta UI | Port for `start-ui-auth.mjs` (default `3001`) |
-| `UI_PORT_LOGIN` | No | Login UI | Port for `start-ui-login.mjs` (default `3002`) |
-| `UI_PORT_OTP_LOGIN` | No | OTP login UI | Port for `start-ui-otp-login.mjs` (default `3003`) |
+| `BACKEND_PORT_AUTHENTICATED` | No | `main_auth.py`, authenticated UI | Port for the unified authenticated backend (default `8003`) |
 | `BACKEND_BIND_HOST` | No | Python backends | Host to bind on (default `0.0.0.0`) |
 | `BACKEND_HOST` | No | UI | Host used when building backend URLs (default `127.0.0.1`) |
 | `UI_BACKEND_TIMEOUT_MS` | No | UI | Timeout for UI → backend requests (default `15000`) |
@@ -53,9 +47,7 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 | `BACKEND_WITHOUT_GUARDRAIL` | Override URL for “Without Guardrail” mode |
 | `BACKEND_WITH_GUARDRAIL` | Override URL for “With Guardrail” SDK mode |
 | `BACKEND_WITH_GUARDRAIL_LITELLM` | Override URL for LiteLLM mode |
-| `BACKEND_WITH_AUTH` | Override URL for Okta SSO mode |
-| `BACKEND_WITH_LOGIN` | Override URL for username/password login mode |
-| `BACKEND_WITH_OTP_LOGIN` | Override URL for username/password + OTP cookie mode |
+| `BACKEND_AUTHENTICATED` | Override URL for the unified authenticated backend |
 
 ### Singulr guardrail (required for guardrail backends)
 
@@ -96,12 +88,12 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 | Variable | Required | Description |
 |---|---|---|
 | `CHATBOT_API_KEY` | No | If set, `POST /api/chat` on `main.py` requires this token |
-| `LOGIN_USERNAME` | No | Username for `main_login.py` (default `demo`) |
-| `LOGIN_PASSWORD` | No | Password for `main_login.py` (default `demo123`) |
-| `LOGIN_TOKEN` | No | Static token issued after login (default `novapay-static-token`) |
-| `OTP_LOGIN_USERNAME` | No | Username for `main_otp_login.py` (default `demo`) |
-| `OTP_LOGIN_PASSWORD` | No | Password for `main_otp_login.py` (default `demo123`) |
-| `OTP_LOGIN_CODE` | No | Constant OTP for `main_otp_login.py` (default `123456`) |
+| `LOGIN_USERNAME` | No | Username for the password-token mode (default `demo`) |
+| `LOGIN_PASSWORD` | No | Password for the password-token mode (default `demo123`) |
+| `LOGIN_TOKEN` | No | Static token issued after password login (default `novapay-static-token`) |
+| `OTP_LOGIN_USERNAME` | No | Username for the OTP mode (default `demo`) |
+| `OTP_LOGIN_PASSWORD` | No | Password for the OTP mode (default `demo123`) |
+| `OTP_LOGIN_CODE` | No | Constant OTP for the OTP mode (default `123456`) |
 | `OTP_CHAT_SESSION` | No | Static HTTP-only chat session value (default `novapay-otp-chat-session`) |
 | `OTP_CHAT_COOKIE_NAME` | No | Name of the backend chat cookie (default `novapay_chat_session`) |
 | `OTP_CHAT_COOKIE_MAX_AGE` | No | Chat cookie lifetime in seconds (default `3600`) |
@@ -113,11 +105,11 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 |---|---|---|
 | `OKTA_DOMAIN` | No | Okta org domain used by the Python backend to validate tokens (default `singulr.okta.com`) |
 | `OKTA_CLIENT_ID` | No | SPA client ID expected in JWT `aud` (default `0oa26y1wj6p5lppaj1d8`) |
-| `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default `http://localhost:3001,https://chat-demo-external.singulr.ai`) |
+| `CORS_ALLOWED_ORIGINS` | No | Comma-separated origins allowed by `main_auth.py` (default includes `http://localhost:3000`) |
 
 The browser login in `lib/okta.ts` uses the same domain and client ID (currently hardcoded). The SPA app in Okta must allow:
 
-- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3001/auth/callback`)
+- Sign-in redirect: `{origin}/auth/callback` (e.g. `http://localhost:3000/auth/callback`)
 - Sign-out redirect: `{origin}/auth`
 - Grant type: Authorization Code with PKCE
 - Scopes: `openid`, `profile`, `email`
@@ -154,20 +146,37 @@ python main.py --env-file .env
 python main_guardrail.py --env-file .env
 python main_guardrail_litellm.py --env-file .env
 python main_auth.py --env-file .env
-python main_login.py --env-file .env
-python main_otp_login.py --env-file .env
 ```
 
-### Okta SSO login UI
+### Authenticated UIs and backend
 
-Start the Okta-authenticated backend and a UI that redirects `/` to `/auth`:
+Start the single authenticated backend and one Next.js server. The server exposes
+all three authenticated UIs at `/auth`, `/login`, and `/otp-login`:
+
+```bash
+./dev-auth.sh
+```
+
+The authenticated backend uses `BACKEND_PORT_AUTHENTICATED` (default `8003`) and
+the UI uses `UI_PORT` (default `3000`). You can also start them individually:
 
 ```bash
 python python-chatbot/main_auth.py --env-file python-chatbot/.env
-npm run dev:ui:auth
+node scripts/start-ui-auth.mjs --env-file python-chatbot/.env
+# Or: npm run dev:ui:authenticated
 ```
 
-Open the URL shown in the terminal (port comes from `UI_PORT_AUTH`, default `3001`). The same pages also work on the standard UI at `/auth` if `main_auth.py` is running.
+The three auth modes use separate namespaced backend APIs but share the same
+provider/model implementation:
+
+- Okta UI: `/auth` and `/auth/chat`
+- Username/password UI: `/login` and `/login/chat`
+- Username/password + OTP UI: `/otp-login` and `/otp-login/chat`
+
+The authenticated launcher is isolated from the normal UI. On this server,
+`/` returns `404`, and the normal UI proxy routes (`/api/ui`, `/api/providers`,
+and `/api/litellm-providers`) are unavailable. Use the authenticated paths
+above; do not start the authenticated composition with `scripts/start-ui.mjs`.
 
 **Login flow (Authorization Code + PKCE):**
 
@@ -176,36 +185,19 @@ Open the URL shown in the terminal (port comes from `UI_PORT_AUTH`, default `300
 3. After the user signs in, Okta redirects to `/auth/callback?code=…&state=…`.
 4. The callback page exchanges the code for tokens at Okta `/oauth2/v1/token` and stores them in `localStorage` (`okta_tokens`).
 5. The user is sent to `/auth/chat`. Every chat request goes to `POST /api/auth/ui` with `Authorization: Bearer <access_token>`.
-6. Next.js forwards that header to `main_auth.py`, which validates the access token with Okta `/oauth2/v1/userinfo` (JWT decode is a fallback). Invalid or missing tokens return `401` and the UI signs the user out.
+6. Next.js forwards that header to the unified `main_auth.py`, which validates the access token with Okta `/oauth2/v1/userinfo` (JWT decode is a fallback). Invalid or missing tokens return `401` and the UI signs the user out.
 
 Sign out clears local tokens and redirects to Okta `/oauth2/v1/logout`, then back to `/auth`.
 
 ### Username/password login UI
 
-Start the login backend and a UI that redirects `/` to `/login`:
-
-```bash
-python python-chatbot/main_login.py --env-file python-chatbot/.env
-npm run dev:ui:login
-```
-
-Open the URL shown in the terminal (port comes from `UI_PORT_LOGIN`, default `3002`). Sign in with `demo` / `demo123` (or the values in your env file). Chat requests send the returned token as `Authorization: Bearer …`; the backend rejects chat without it.
-
-The same login pages also work on the standard UI at `/login` if `main_login.py` is running.
-
-Each script reads its port from the matching `BACKEND_PORT_*` variable in the env file.
+Visit `/login` on the authenticated UI server. Sign in with the configured
+username and password. Chat requests send the returned token as
+`Authorization: Bearer …`; the unified backend rejects chat without it.
 
 ### Username/password + OTP cookie login UI
 
-Start the OTP backend and its separate UI:
-
-```bash
-python python-chatbot/main_otp_login.py --env-file python-chatbot/.env
-npm run dev:ui:otp-login
-```
-
-Open the URL shown in the terminal (port comes from `UI_PORT_OTP_LOGIN`, default `3003`) and visit
-`/otp-login` if using the standard UI server. The demo uses the configured static username and
+Visit `/otp-login` on the authenticated UI server. The demo uses the configured static username and
 password, followed by the constant OTP in `OTP_LOGIN_CODE` (default `123456`).
 
 After successful OTP verification, the Python backend issues an HTTP-only chat session cookie.
@@ -281,23 +273,27 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 
 | Endpoint | Auth | Description |
 |---|---|---|
-| `GET /` | None | Aria chat UI |
-| `POST /api/ui` | None | Used by the browser UI (proxies to Python backend) |
+| `GET /` | None | Aria chat UI on the normal launcher; returns `404` on the authenticated launcher |
+| `POST /api/ui` | None | Normal UI proxy; unavailable on the authenticated launcher |
 | `POST /api/chat` | `api-key` or `Authorization: Bearer` header | Red teaming target endpoint |
 | `GET /api/providers` | None | SDK provider list for the UI dropdown |
 | `GET /health` | None | Backend health check (Python) |
 | `GET /auth` | None | Okta SSO login UI |
 | `GET /auth/callback` | None | Okta OAuth redirect (exchanges `code` for tokens) |
 | `GET /auth/chat` | Okta access token in `localStorage` | Authenticated Aria chat UI |
-| `POST /api/auth/ui` | `Authorization: Bearer` (Okta access token) | Okta-mode chat (proxies to `main_auth.py`) |
-| `GET /api/auth/providers` | None | Provider list from `main_auth.py` |
+| `POST /api/auth/ui` | `Authorization: Bearer` (Okta access token) | Okta-mode chat |
+| `GET /api/auth/providers` | None | Provider list for Okta mode |
+| `GET /api/auth/check` | Optional bearer token | Okta session check |
 | `GET /login` | None | Username/password login UI |
 | `POST /api/login` | None | Exchange username/password for a static token |
-| `POST /api/login/ui` | `Authorization: Bearer` | Login-mode chat (proxies to `main_login.py`) |
+| `POST /api/login/ui` | `Authorization: Bearer` | Login-mode chat |
+| `GET /api/login/providers` | None | Provider list for login mode |
 | `GET /otp-login` | None | Username/password + constant OTP login UI |
 | `POST /api/otp-login` | None | Validate OTP-mode username/password and begin OTP flow |
 | `POST /api/otp-login/verify` | None | Verify the constant OTP and set the HTTP-only chat cookie |
-| `POST /api/otp-login/ui` | `novapay_chat_session` cookie | OTP-mode chat (proxies to `main_otp_login.py`) |
+| `GET /api/otp-login/check` | Optional chat cookie | OTP session check |
+| `GET /api/otp-login/providers` | None | Provider list for OTP mode |
+| `POST /api/otp-login/ui` | `novapay_chat_session` cookie | OTP-mode chat |
 | `POST /api/otp-login/logout` | Optional cookie | Clear the OTP-mode chat cookie |
 
 ---
