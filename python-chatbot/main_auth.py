@@ -23,19 +23,19 @@ import providers
 from okta_auth import AuthenticatedUser, optional_auth, require_auth
 
 app = FastAPI(title="NovaPay Python Chatbot (Authenticated)")
-
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ALLOWED_ORIGINS",
-        "http://localhost:3000,http://localhost:3001,https://chat-demo-external.singulr.ai",
-    ).split(",")
-    if origin.strip()
-]
+# authenticated_ui_port = os.getenv("AUTHENTICATED_UI_PORT")
+# ALLOWED_ORIGINS = [
+#     origin.strip()
+#     for origin in os.getenv(
+#         "CORS_ALLOWED_ORIGINS",
+#         f"http://localhost:{authenticated_ui_port},https://chat-demo-external.singulr.ai",
+#     ).split(",")
+#     if origin.strip()
+# ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
