@@ -171,12 +171,7 @@ async def okta_me(user: AuthenticatedUser = Depends(require_auth)):
 @app.get("/api/auth/check")
 async def okta_check(user: Optional[AuthenticatedUser] = Depends(optional_auth)):
     if user:
-        return {
-            "authenticated": True,
-            "user_id": user.user_id,
-            "email": user.email,
-            "login": user.login,
-        }
+        return {"authenticated": True, "user_id": user.user_id, "email": user.email}
     return {"authenticated": False}
 
 
@@ -316,7 +311,7 @@ async def health():
         "status": "ok",
         "backend": "python-authenticated",
         "model": providers.BEDROCK_MODEL_ID,
-        "auth": ["okta-session", "username-password", "username-password-otp-cookie"],
+        "auth": ["okta-oauth", "username-password", "username-password-otp-cookie"],
     }
 
 
