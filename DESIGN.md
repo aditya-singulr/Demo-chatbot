@@ -240,7 +240,6 @@ app.add_middleware(CORSMiddleware, ...)
 
 # 5. Endpoints
 @app.post("/api/ui")     # UI chat endpoint
-@app.post("/api/chat")   # Programmatic chat endpoint (for red teaming)
 @app.get("/api/providers")
 @app.get("/health")
 ```
@@ -656,30 +655,6 @@ The OTP UI uses same-origin Next.js proxy routes:
 The Python backend equivalents are `/api/login`, `/api/verify-otp`,
 `/api/auth/check`, `/api/providers`, `/api/ui`, and `/api/logout`.
 
-### POST /api/chat (Red Teaming Endpoint)
-
-**Request:**
-```json
-{
-  "messages": [{"role": "user", "content": "{{PROMPT}}"}],
-  "provider": "bedrock_converse",
-  "temperature": 0.7,
-  "max_tokens": 8192
-}
-```
-
-**Headers:** `api-key: <CHATBOT_API_KEY>` or `Authorization: Bearer <token>`
-
-**Response:**
-```json
-{
-  "choices": [{
-    "message": {"role": "assistant", "content": "{{COMPLETION}}"}
-  }],
-  "model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-  "provider": "bedrock_converse"
-}
-```
 
 ### GET /api/providers
 
@@ -809,8 +784,6 @@ def call_my_provider(messages: list[dict], system: str) -> str:
 
 ### API Authentication
 
-- `/api/chat` requires `CHATBOT_API_KEY` when set
-- Token checked via `api-key` header or `Authorization: Bearer` header
 - `/api/ui` has no authentication (browser-facing)
 - OTP-mode `/api/otp-login/ui` requires the `novapay_chat_session` HTTP-only
   cookie; the Python OTP backend rejects requests without a valid cookie

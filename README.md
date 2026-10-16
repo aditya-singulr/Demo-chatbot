@@ -88,7 +88,6 @@ The UI derives backend URLs from `BACKEND_HOST` + the matching `BACKEND_PORT_*` 
 
 | Variable | Required | Description |
 |---|---|---|
-| `CHATBOT_API_KEY` | No | If set, `POST /api/chat` on `main.py` requires this token |
 | `LOGIN_USERNAME` | No | Username for the password-token mode (default `demo`) |
 | `LOGIN_PASSWORD` | No | Password for the password-token mode (default `demo123`) |
 | `LOGIN_TOKEN` | No | Static token issued after password login (default `novapay-static-token`) |
@@ -162,10 +161,16 @@ The authenticated backend uses `BACKEND_PORT_AUTHENTICATED` (default `8003`) and
 the UI uses `AUTH_UI_PORT` (default `3001`). You can also start them individually:
 
 ```bash
+# Build the production bundle before starting the UI with --prod
+npm run build
+
 python python-chatbot/main_auth.py --env-file python-chatbot/.env
 node scripts/start-ui-auth.mjs --env-file python-chatbot/.env
 # Or: npm run dev:ui:authenticated
 ```
+
+When using `--prod`, run `npm run build` again after changing source code or
+the environment configuration used by the UI, then restart the UI process.
 
 The three auth modes use separate namespaced backend APIs but share the same
 provider/model implementation:
@@ -276,7 +281,6 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 |---|---|---|
 | `GET /` | None | Aria chat UI on the normal launcher; returns `404` on the authenticated launcher |
 | `POST /api/ui` | None | Normal UI proxy; unavailable on the authenticated launcher |
-| `POST /api/chat` | `api-key` or `Authorization: Bearer` header | Red teaming target endpoint |
 | `GET /api/providers` | None | SDK provider list for the UI dropdown |
 | `GET /health` | None | Backend health check (Python) |
 | `GET /auth` | None | Okta SSO login UI |
@@ -298,58 +302,3 @@ Open `http://<ec2-ip>:3001` and `http://<ec2-ip>:3002`. Ensure your security gro
 | `POST /api/otp-login/logout` | Optional cookie | Clear the OTP-mode chat cookie |
 
 ---
-
-## Singulr Red Teaming Target Configuration
-
-### Basic Fields
-
-| Field | Value |
-|---|---|
-| Target Type | AI Chatbot |
-| API Key | your `CHATBOT_API_KEY` value |
-| Model ID | your Bedrock / provider model ID |
-| HTTP Endpoint | `https://<your-host>/api/chat` |
-
-### HTTP Request Template
-
-```
-POST {url} HTTP/1.1
-api-key: {api_key}
-Content-Type: application/json
-
-{
-  "messages": [{
-    "role": "user",
-    "content": "{{PROMPT}}"
-  }],
-  "temperature": 0.7,
-  "max_tokens": 8192,
-  "top_p": 1.0
-}
-```
-
-### HTTP Response Template
-
-```json
-{
-  "id": "chatcmpl-abc123",
-  "object": "chat.completion",
-  "created": 1720000000,
-  "model": "claude-sonnet-4-6",
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": "{{COMPLETION}}"
-      },
-      "finish_reason": "stop"
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 25,
-    "completion_tokens": 85,
-    "total_tokens": 110
-  }
-}
-```
