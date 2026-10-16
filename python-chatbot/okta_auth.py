@@ -1,210 +1,126 @@
 """
-Okta OAuth token verification for FastAPI.
+Okta session verification for FastAPI.
 
-Validates access tokens by introspecting with Okta or verifying JWT locally.
+Validates the app session cookie by calling Okta's Sessions API.
 """
 
 import os
 from functools import lru_cache
 from typing import Optional
-import json
-import base64
 
 import httpx
-from fastapi import HTTPException, Request, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import HTTPException, Request
 from pydantic import BaseModel
 
 OKTA_DOMAIN = os.getenv("OKTA_DOMAIN", "singulr.okta.com")
-OKTA_CLIENT_ID = os.getenv("OKTA_CLIENT_ID", "0oa26y1wj6p5lppaj1d8")
-OKTA_ISSUER = f"https://{OKTA_DOMAIN}"
+OKTA_API_TOKEN = os.getenv("OKTA_API_TOKEN", "")
+SESSION_COOKIE_NAME = os.getenv("OKTA_SESSION_COOKIE_NAME", "okta_session")
+
+
+class OktaSession(BaseModel):
+    id: str
+    login: str
+    userId: str
+    status: str
+    expiresAt: str
 
 
 class AuthenticatedUser(BaseModel):
     user_id: str
+    login: str
+    session_id: str
     email: Optional[str] = None
     name: Optional[str] = None
 
 
-# HTTP Bearer token extraction
-security = HTTPBearer(auto_error=False)
+def _get_session_cookie(request: Request) -> Optional[str]:
+    return request.cookies.get(SESSION_COOKIE_NAME)
 
 
-def decode_jwt_payload(token: str) -> Optional[dict]:
-    """Decode JWT payload without verification (for extracting claims)."""
+@lru_cache(maxsize=1000)
+def _cached_session_validation(session_id: str) -> Optional[dict]:
+    if not OKTA_DOMAIN or not OKTA_API_TOKEN:
+        return None
+
     try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return None
-        # Add padding if needed
-        payload = parts[1]
-        padding = 4 - len(payload) % 4
-        if padding != 4:
-            payload += "=" * padding
-        decoded = base64.urlsafe_b64decode(payload)
-        return json.loads(decoded)
+        response = httpx.get(
+            f"https://{OKTA_DOMAIN}/api/v1/sessions/{session_id}",
+            headers={
+                "Authorization": f"SSWS {OKTA_API_TOKEN}",
+                "Accept": "application/json",
+            },
+            timeout=10.0,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "ACTIVE":
+                return data
+        return None
+
     except Exception:
         return None
 
 
-@lru_cache(maxsize=1)
-def get_okta_jwks() -> dict:
-    """Fetch Okta's JWKS for token verification."""
-    try:
-        response = httpx.get(
-            f"https://{OKTA_DOMAIN}/oauth2/v1/keys",
-            timeout=10.0,
-        )
-        if response.status_code == 200:
-            return response.json()
-    except Exception:
-        pass
-    return {}
-
-
-def validate_token_via_userinfo(token: str) -> Optional[dict]:
-    """
-    Validate access token by calling Okta's /userinfo endpoint.
-
-    This works for both opaque tokens and JWTs from Org Authorization Server.
-    If the token is valid, Okta returns user info; otherwise it returns 401.
-    """
-    try:
-        response = httpx.get(
-            f"https://{OKTA_DOMAIN}/oauth2/v1/userinfo",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10.0,
-        )
-        if response.status_code == 200:
-            return response.json()
-    except Exception as e:
-        print(f"Userinfo validation error: {e}")
+def validate_session(session_id: str) -> Optional[OktaSession]:
+    data = _cached_session_validation(session_id)
+    if data:
+        return OktaSession(**data)
     return None
 
 
-def introspect_token(token: str) -> Optional[dict]:
-    """
-    Validate token - first try userinfo endpoint, fallback to JWT decode.
-
-    For Org Authorization Server, userinfo is the reliable method.
-    """
-    # Primary: Use userinfo endpoint (works for opaque and JWT tokens)
-    userinfo = validate_token_via_userinfo(token)
-    if userinfo:
-        return userinfo
-
-    # Fallback: Try to decode as JWT (for custom auth servers)
-    payload = decode_jwt_payload(token)
-    if not payload:
-        return None
-
-    # Check required claims
-    iss = payload.get("iss")
-    aud = payload.get("aud")
-    exp = payload.get("exp")
-
-    if iss != OKTA_ISSUER:
-        return None
-
-    if aud != OKTA_CLIENT_ID:
-        return None
-
-    # Check expiration
-    import time
-    if exp and exp < time.time():
-        return None
-
-    return payload
+def clear_session_cache() -> None:
+    _cached_session_validation.cache_clear()
 
 
-def validate_access_token(token: str) -> Optional[AuthenticatedUser]:
-    """
-    Validate an access token and return user info.
-    """
-    payload = introspect_token(token)
-    if not payload:
-        return None
-
+def _user_from_session(session: OktaSession) -> AuthenticatedUser:
     return AuthenticatedUser(
-        user_id=payload.get("sub", ""),
-        email=payload.get("email"),
-        name=payload.get("name"),
+        user_id=session.userId,
+        login=session.login,
+        session_id=session.id,
+        email=session.login,
+        name=session.login,
     )
 
 
-def get_token_from_header(request: Request) -> Optional[str]:
-    """Extract Bearer token from Authorization header."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        return None
+async def require_auth(request: Request) -> AuthenticatedUser:
+    if not OKTA_DOMAIN:
+        raise HTTPException(status_code=500, detail="OKTA_DOMAIN not configured")
 
-    parts = auth_header.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        return None
+    if not OKTA_API_TOKEN:
+        raise HTTPException(status_code=500, detail="OKTA_API_TOKEN not configured")
 
-    return parts[1]
+    session_id = _get_session_cookie(request)
 
-
-async def require_auth(
-    request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-) -> AuthenticatedUser:
-    """
-    FastAPI dependency that requires valid Okta access token.
-
-    Usage:
-        @app.post("/api/protected")
-        async def protected_endpoint(user: AuthenticatedUser = Depends(require_auth)):
-            return {"user": user.email}
-    """
-    token = None
-
-    # Try to get token from HTTPBearer
-    if credentials:
-        token = credentials.credentials
-
-    # Fallback to manual extraction
-    if not token:
-        token = get_token_from_header(request)
-
-    if not token:
+    if not session_id:
         raise HTTPException(
             status_code=401,
-            detail="No access token provided",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="No session cookie found",
+            headers={"WWW-Authenticate": "Cookie"},
         )
 
-    user = validate_access_token(token)
+    session = validate_session(session_id)
 
-    if not user:
+    if not session:
         raise HTTPException(
             status_code=401,
-            detail="Invalid or expired access token",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Invalid or expired session",
+            headers={"WWW-Authenticate": "Cookie"},
         )
 
-    return user
+    return _user_from_session(session)
 
 
-async def optional_auth(
-    request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-) -> Optional[AuthenticatedUser]:
-    """
-    FastAPI dependency that optionally validates Okta access token.
-
-    Returns AuthenticatedUser if valid token exists, None otherwise.
-    Does not raise HTTPException for missing/invalid tokens.
-    """
-    token = None
-
-    if credentials:
-        token = credentials.credentials
-
-    if not token:
-        token = get_token_from_header(request)
-
-    if not token:
+async def optional_auth(request: Request) -> Optional[AuthenticatedUser]:
+    if not OKTA_DOMAIN or not OKTA_API_TOKEN:
         return None
 
-    return validate_access_token(token)
+    session_id = _get_session_cookie(request)
+    if not session_id:
+        return None
+
+    session = validate_session(session_id)
+    if not session:
+        return None
+
+    return _user_from_session(session)

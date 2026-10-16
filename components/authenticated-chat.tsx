@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { getAccessToken, getUserFromToken, hasValidTokens, logout } from "@/lib/okta";
+import { checkAuthStatus, logout } from "@/lib/okta";
 import {
   getLoginToken,
   logoutLogin,
@@ -110,14 +110,18 @@ export default function AuthenticatedChat({ mode }: { mode: AuthenticatedChatMod
 
     async function initialize() {
       if (mode === "okta") {
-        if (!hasValidTokens()) {
+        try {
+          const status = await checkAuthStatus();
+          if (!active) return;
+          if (!status.authenticated) {
+            router.replace("/auth");
+            return;
+          }
+          setIdentity(status.login || status.email || "");
+          setCheckingAuth(false);
+        } catch {
           router.replace("/auth");
           return;
-        }
-        const user = getUserFromToken();
-        if (active) {
-          setIdentity(user?.name || user?.email || "");
-          setCheckingAuth(false);
         }
       } else if (mode === "login") {
         if (!loginToken) {
@@ -152,7 +156,7 @@ export default function AuthenticatedChat({ mode }: { mode: AuthenticatedChatMod
       }
 
       const response = await fetch(`${apiPrefix(mode)}/providers`, {
-        credentials: mode === "otp-login" ? "include" : "same-origin",
+        credentials: mode === "otp-login" || mode === "okta" ? "include" : "same-origin",
       }).catch(() => null);
       if (!active || !response?.ok) return;
       const data = await response.json().catch(() => ({}));
@@ -234,18 +238,14 @@ export default function AuthenticatedChat({ mode }: { mode: AuthenticatedChatMod
 
   function requestInit(): RequestInit | null {
     const headers = new Headers({ "Content-Type": "application/json" });
-    if (mode === "okta") {
-      const token = getAccessToken();
-      if (!token) return null;
-      headers.set("Authorization", `Bearer ${token}`);
-    } else if (mode === "login") {
+    if (mode === "login") {
       const token = getLoginToken();
       if (!token) return null;
       headers.set("Authorization", `Bearer ${token}`);
     }
     return {
       headers,
-      credentials: mode === "otp-login" ? "include" : "same-origin",
+      credentials: mode === "otp-login" || mode === "okta" ? "include" : "same-origin",
     };
   }
 
