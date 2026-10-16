@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { loginWithPassword, useLoginToken } from "@/lib/login-auth";
 
@@ -118,9 +119,9 @@ export default function LoginPage() {
         </div>
 
         <p className="text-xs text-gray-400 text-center mt-4">
-          <a href="/" className="hover:text-gray-600 underline">
+          <Link href="/" className="hover:text-gray-600 underline">
             Use without authentication
-          </a>
+          </Link>
         </p>
       </div>
     </div>

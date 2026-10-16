@@ -141,6 +141,8 @@ export async function initiateLogin(): Promise<void> {
     state: state,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
+    // Ask Okta to show its hosted login instead of silently using Google SSO.
+    prompt: "login",
   });
 
   const authorizeUrl = `https://${OKTA_DOMAIN}/oauth2/v1/authorize?${params.toString()}`;

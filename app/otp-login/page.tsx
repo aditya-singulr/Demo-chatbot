@@ -68,13 +68,6 @@ export default function OtpLoginPage() {
     }
   }
 
-  function returnToCredentials() {
-    setStep("credentials");
-    setPendingUser(null);
-    setOtp("");
-    setError(null);
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">

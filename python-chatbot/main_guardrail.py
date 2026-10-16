@@ -124,33 +124,6 @@ async def ui_chat(req: UiChatRequest):
     }
 
 
-@app.post("/api/chat")
-async def api_chat(
-    req: ApiChatRequest,
-    api_key: Optional[str] = Header(None),
-    authorization: Optional[str] = Header(None),
-):
-    expected = os.environ.get("CHATBOT_API_KEY")
-    token = api_key or (authorization.removeprefix("Bearer ").strip() if authorization else None)
-    if expected and token != expected:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    messages = _messages_payload(req.messages)
-    if not messages:
-        raise HTTPException(status_code=400, detail="messages required")
-
-    try:
-        reply = await asyncio.to_thread(call_model, messages, provider=req.provider)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Model API error: {exc}") from exc
-
-    return {
-        "choices": [{"message": {"role": "assistant", "content": reply}}],
-        "model": BEDROCK_MODEL_ID,
-        "provider": req.provider or providers.DEFAULT_PROVIDER,
-    }
-
-
 @app.get("/api/providers")
 async def get_providers():
     return {"providers": providers.list_providers(), "default": providers.DEFAULT_PROVIDER}

@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 /**
- * Start the Next.js UI with Okta authentication enabled.
+ * Start the common Next.js UI for the authenticated routes.
+ *
+ * The single server exposes:
+ *   /auth
+ *   /login
+ *   /otp-login
  *
  * Usage:
  *   node scripts/start-ui-auth.mjs --env-file python-chatbot/.env [--prod]
- *
- * This script loads environment variables from the specified file and starts
- * Next.js on the UI_PORT_AUTH port (default: 3001).
- *
- * Required environment variables for Okta:
- *   - NEXT_PUBLIC_OKTA_DOMAIN: Your Okta domain (e.g., dev-12345.okta.com)
- *   - OKTA_API_TOKEN: API token for backend session validation
- *   - OKTA_SESSION_COOKIE_NAME: Cookie name (default: okta_session)
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -45,11 +42,11 @@ function loadEnvFile(envFile) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator === -1) continue;
 
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
+    const key = trimmed.slice(0, separator).trim();
+    let value = trimmed.slice(separator + 1).trim();
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))
@@ -76,32 +73,13 @@ if (!values["env-file"]) {
 }
 
 const envPath = loadEnvFile(values["env-file"]);
-
-// Use UI_PORT_AUTH for authenticated UI (default: 3001)
-const uiPort = process.env.UI_PORT_AUTH ?? "3001";
+const uiPort = process.env.AUTH_UI_PORT ?? "3001";
 const nextCmd = values.prod ? "start" : "dev";
-
-// Validate required Okta config
-const oktaDomain = process.env.NEXT_PUBLIC_OKTA_DOMAIN || process.env.OKTA_DOMAIN;
-if (!oktaDomain) {
-  console.warn("\n⚠️  Warning: NEXT_PUBLIC_OKTA_DOMAIN not set. Okta authentication will not work.\n");
-}
-
-// Set NEXT_PUBLIC_ prefixed vars for client-side access
-if (process.env.OKTA_DOMAIN && !process.env.NEXT_PUBLIC_OKTA_DOMAIN) {
-  process.env.NEXT_PUBLIC_OKTA_DOMAIN = process.env.OKTA_DOMAIN;
-}
-if (process.env.OKTA_SESSION_COOKIE_NAME && !process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME) {
-  process.env.NEXT_PUBLIC_OKTA_SESSION_COOKIE_NAME = process.env.OKTA_SESSION_COOKIE_NAME;
-}
-// Enable auth mode for middleware redirect
-process.env.NEXT_PUBLIC_AUTH_MODE = "okta";
+process.env.AUTHENTICATED_UI_ONLY = "true";
 
 console.log(`Loading env from ${envPath}`);
-console.log(`Starting Next.js (auth) on port ${uiPort} (${nextCmd})`);
-if (oktaDomain) {
-  console.log(`Okta domain: ${oktaDomain}`);
-}
+console.log(`Starting authenticated UI on port ${uiPort} (${nextCmd})`);
+console.log("Available routes: /auth, /login, /otp-login");
 
 const child = spawn("npx", ["next", nextCmd, "-p", uiPort], {
   cwd: root,
